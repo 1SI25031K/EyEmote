@@ -11,16 +11,17 @@ struct CalibrationView: View {
     @ObservedObject var gazeManager: GazeManager
     var onComplete: () -> Void
     
-    // ★ 7点キャリブレーションに変更
+    // ★ 8点キャリブレーションに変更 (最後にもう一度センター)
     enum Step {
         case start
         case center
         case topLeft
         case topRight
-        case midLeft  // 追加
-        case midRight // 追加
+        case midLeft
+        case midRight
         case bottomRight
         case bottomLeft
+        case centerFinal // ★追加: 完了アニメーションへ繋ぐための点
         case finished
     }
     
@@ -42,107 +43,107 @@ struct CalibrationView: View {
                 }
             }
             
+            // 計測中のターゲット表示
             if isCalibrating() {
                 CalibrationTarget(progress: progress)
                     .position(targetPosition())
                     .onAppear { startCalibrationPhase() }
+                    // アニメーションを少し滑らかに
                     .animation(Animation.easeInOut(duration: 0.6), value: currentStep)
             }
         }
     }
     
+    // 開始画面 (変更なし)
     var startScreen: some View {
         VStack(spacing: 30) {
             Image(systemName: "eye.fill")
                 .font(.system(size: 70))
                 .foregroundColor(.blue)
-            
             Text("視線入力の調整")
-                .font(.largeTitle).bold()
-                .foregroundColor(.white)
-            
+                .font(.largeTitle).bold().foregroundColor(.white)
             VStack(spacing: 15) {
-                Text("7つのポイントを見つめて精度を高めます。")
-                    .font(.title3)
-                    .foregroundColor(.white)
-                
-                // 機能説明ラベル（自動＆手動）
+                Text("8つのポイントを見つめて精度を高めます。") // 文言変更
+                    .font(.title3).foregroundColor(.white)
+                Text("体の位置がずれても大丈夫。\nAIがずれを検知して、自動で再調整します。")
+                    .multilineTextAlignment(.center).foregroundColor(.gray).padding(.top, 4)
                 VStack(spacing: 10) {
-                    // 自動補正の説明
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.triangle.2.circlepath.camera.fill")
                             .foregroundColor(.orange)
                         Text("位置ズレ自動補正 ON")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundColor(.orange)
+                            .font(.caption).fontWeight(.bold).foregroundColor(.orange)
                     }
-                    .padding(8)
-                    .background(Color.orange.opacity(0.15))
-                    .cornerRadius(8)
-                    
-                    // 手動補正（閉眼）の説明
+                    .padding(8).background(Color.orange.opacity(0.15)).cornerRadius(8)
                     HStack(spacing: 8) {
-                        Image(systemName: "eye.slash.fill")
-                            .foregroundColor(.green)
+                        Image(systemName: "eye.slash.fill").foregroundColor(.green)
                         Text("3秒閉じて開けるとリセット")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundColor(.green)
+                            .font(.caption).fontWeight(.bold).foregroundColor(.green)
                     }
-                    .padding(8)
-                    .background(Color.green.opacity(0.15))
-                    .cornerRadius(8)
+                    .padding(8).background(Color.green.opacity(0.15)).cornerRadius(8)
                 }
             }
             .padding()
-            
             Button(action: { startCalibration() }) {
                 Text("今すぐ開始")
                     .font(.title3.bold())
-                    .padding(.horizontal, 40)
-                    .padding(.vertical, 16)
-                    .background(Color.blue)
-                    .cornerRadius(30)
-                    .foregroundColor(.white)
+                    .padding(.horizontal, 40).padding(.vertical, 16)
+                    .background(Color.blue).cornerRadius(30).foregroundColor(.white)
             }
-            
-            Text("\(countdown)秒後に開始...")
-                .foregroundColor(.gray)
+            Text("\(countdown)秒後に開始...").foregroundColor(.gray)
                 .onAppear { startCountdown() }
         }
     }
     
+    // 完了画面
+    // ★ポイント: 直前の centerFinal と同じ位置にアイコンを出すことで、
+    // ターゲットがチェックマークに変化したように見せる
     var finishedScreen: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 80))
-                .foregroundColor(.green)
-            Text("完了")
+        VStack {
+            // 画面中央に配置
+            ZStack {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 80, height: 80)
+                    .scaleEffect(progress) // ポップアップアニメーション
+                
+                Image(systemName: "checkmark")
+                    .font(.system(size: 40, weight: .bold))
+                    .foregroundColor(.white)
+                    .scaleEffect(progress)
+            }
+            .shadow(color: .green.opacity(0.5), radius: 20)
+            
+            Text("準備完了")
                 .font(.title).bold().foregroundColor(.white)
+                .padding(.top, 20)
+                .opacity(progress)
         }
         .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+                progress = 1.0
+            }
+            // 1.5秒後にメイン画面へ
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { onComplete() }
         }
     }
     
-    // ロジック部分
+    // --- ロジック ---
+    
     private func startCountdown() {
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             if countdown > 1 { countdown -= 1 } else { startCalibration() }
         }
     }
-    
     private func startCalibration() {
         timer?.invalidate()
         withAnimation { currentStep = .center }
     }
-    
     private func isCalibrating() -> Bool {
         return currentStep != .start && currentStep != .finished
     }
     
-    // ★ 7点の座標定義
+    // ターゲット座標
     private func targetPosition() -> CGPoint {
         let w = UIScreen.main.bounds.width
         let h = UIScreen.main.bounds.height
@@ -152,19 +153,20 @@ struct CalibrationView: View {
         case .center: return CGPoint(x: w * 0.5, y: h * 0.5)
         case .topLeft: return CGPoint(x: w * inset, y: h * inset)
         case .topRight: return CGPoint(x: w * (1 - inset), y: h * inset)
-        case .midLeft: return CGPoint(x: w * inset, y: h * 0.5)      // 追加
-        case .midRight: return CGPoint(x: w * (1 - inset), y: h * 0.5) // 追加
+        case .midLeft: return CGPoint(x: w * inset, y: h * 0.5)
+        case .midRight: return CGPoint(x: w * (1 - inset), y: h * 0.5)
         case .bottomRight: return CGPoint(x: w * (1 - inset), y: h * (1 - inset))
         case .bottomLeft: return CGPoint(x: w * inset, y: h * (1 - inset))
+        case .centerFinal: return CGPoint(x: w * 0.5, y: h * 0.5) // ★最後に戻ってくる
         default: return CGPoint(x: w * 0.5, y: h * 0.5)
         }
     }
     
     private func startCalibrationPhase() {
         progress = 0.0
-        withAnimation(.linear(duration: 1.5)) { progress = 1.0 } // 少しテンポアップ(1.5秒)
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        // 各ステップ1.2秒 (少しテンポアップ)
+        withAnimation(.linear(duration: 1.2)) { progress = 1.0 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             recordData()
             advanceStep()
         }
@@ -172,7 +174,6 @@ struct CalibrationView: View {
     
     private func recordData() {
         let inset: CGFloat = 0.15
-        
         switch currentStep {
         case .center:
             gazeManager.calibrateCenter()
@@ -189,6 +190,9 @@ struct CalibrationView: View {
             gazeManager.calibrateSensitivity(lookingAt: CGPoint(x: 1-inset, y: 1-inset), centerRaw: centerRaw)
         case .bottomLeft:
             gazeManager.calibrateSensitivity(lookingAt: CGPoint(x: inset, y: 1-inset), centerRaw: centerRaw)
+        case .centerFinal:
+            // ★最後にもう一度「中心」を基準として再設定する（仕上げ）
+            gazeManager.calibrateCenter()
         default: break
         }
     }
@@ -202,7 +206,8 @@ struct CalibrationView: View {
             case .midLeft: currentStep = .midRight
             case .midRight: currentStep = .bottomRight
             case .bottomRight: currentStep = .bottomLeft
-            case .bottomLeft: currentStep = .finished
+            case .bottomLeft: currentStep = .centerFinal // ★ 8点目へ
+            case .centerFinal: currentStep = .finished   // ★ 完了画面へ
             default: break
             }
         }
@@ -210,7 +215,7 @@ struct CalibrationView: View {
     }
 }
 
-// ターゲット表示用 (以前と同じですが念の為)
+// ターゲットView (変更なし)
 struct CalibrationTarget: View {
     var progress: CGFloat
     var body: some View {
