@@ -17,7 +17,7 @@ struct ContentView: View {
                         .opacity(0.3)
                     
                     VStack {
-                        // ヘッダー (通知バーはここから削除し、Overlayへ移動)
+                        // ヘッダー (レイアウトシフトしない固定配置)
                         HStack {
                             Button(action: { needsCalibration = true }) {
                                 Image(systemName: "scope")
@@ -31,7 +31,7 @@ struct ContentView: View {
                             Spacer()
                         }
                         .padding()
-                        .padding(.top, 60) // 通知バーとかぶらないように少し下げる
+                        .padding(.top, 40)
                         
                         Spacer()
                         
@@ -63,19 +63,21 @@ struct ContentView: View {
                     }
                 }
             }
-            .overlay(alignment: .top) {
-                // ★修正: ここに通知を置くことで、画面レイアウトを崩さずに上に乗せることができます
-                if gazeManager.statusMessage != "稼働中" {
+            // ★修正: 通知を「画面下部」に「控えめ」に表示 (Overlay)
+            .overlay(alignment: .bottom) {
+                if !gazeManager.statusMessage.isEmpty {
                     Text(gazeManager.statusMessage)
-                        .font(.headline)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(
-                            gazeManager.statusMessage.contains("位置ずれ") ? Color.orange :
-                            gazeManager.statusMessage.contains("自動補正") ? Color.green : Color.black.opacity(0.7)
-                        )
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial) // すりガラス風
+                        .background(Color.black.opacity(0.4))
                         .foregroundColor(.white)
-                        .transition(.move(edge: .top))
+                        .clipShape(Capsule()) // 角丸のカプセル型
+                        .shadow(radius: 4)
+                        .padding(.bottom, 50) // 下から少し浮かせる
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                         .animation(.easeInOut, value: gazeManager.statusMessage)
                 }
             }
