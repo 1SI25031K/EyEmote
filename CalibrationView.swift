@@ -11,9 +11,9 @@ struct CalibrationView: View {
     @ObservedObject var gazeManager: GazeManager
     var onComplete: () -> Void
     
-    // ★ 8点キャリブレーション
+    // 8点キャリブレーション
     enum Step {
-        case ready        // 準備（Splashからの遷移直後）
+        case ready
         case center
         case topLeft
         case topRight
@@ -21,57 +21,57 @@ struct CalibrationView: View {
         case midRight
         case bottomRight
         case bottomLeft
-        case centerFinal  // ★8点目：最後の中央
-        case finished     // 完了画面
+        case centerFinal
+        case finished
     }
     
     @State private var currentStep: Step = .ready
     @State private var progress: CGFloat = 0.0
     @State private var centerRaw: CGPoint = .zero
     
+    // ★タイミング調整用の定数
+    // 移動にかける時間
+    private let moveDuration: Double = 0.8
+    // 移動してから計測開始までの「タメ」（目が追いつく時間）
+    private let prepareDuration: Double = 0.2
+    // 計測（リングが溜まる）時間 ← これを長くして余裕を持たせる
+    private let recordingDuration: Double = 2.0
+    
     var body: some View {
         ZStack {
-            // 背景は少し透過させて、裏でカメラが動いていることを示唆しても良いが、
-            // 集中させるために黒背景のままにします
             Color.black.opacity(0.8).ignoresSafeArea()
             
-            // 完了画面
             if currentStep == .finished {
                 finishedScreen
             }
             
             // ターゲット表示
-            // .readyの時は表示せず、.centerになった瞬間に表示開始
             if isCalibrating() {
                 CalibrationTarget(progress: progress)
                     .position(targetPosition())
-                    // 位置移動のアニメーション
-                    .animation(.easeInOut(duration: 0.6), value: currentStep)
+                    // 移動アニメーション (moveDurationと合わせる)
+                    .animation(.easeInOut(duration: moveDuration), value: currentStep)
             }
         }
         .onAppear {
-            // 画面が表示されたらすぐに計測シーケンスを開始
             startSequence()
         }
     }
     
-    // シーケンス開始：少しだけ待ってからCenterへ
     private func startSequence() {
+        // 最初の表示までの少しの間
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            withAnimation { currentStep = .center }
-            startCalibrationPhase()
+            moveToNextStep(.center)
         }
     }
     
-    // 完了画面
     var finishedScreen: some View {
         VStack {
             ZStack {
-                // ターゲットと同じサイズ・位置から出現させる演出
                 Circle()
                     .fill(Color.green)
                     .frame(width: 80, height: 80)
-                    .scaleEffect(progress) // ポップアップ
+                    .scaleEffect(progress)
                 
                 Image(systemName: "checkmark")
                     .font(.system(size: 40, weight: .bold))
@@ -79,12 +79,11 @@ struct CalibrationView: View {
                     .scaleEffect(progress)
             }
             .shadow(color: .green.opacity(0.5), radius: 20)
-            // 画面中央（centerFinalの位置と同じ）
             .position(x: UIScreen.main.bounds.width * 0.5, y: UIScreen.main.bounds.height * 0.5)
             
             Text("準備完了")
                 .font(.title).bold().foregroundColor(.white)
-                .padding(.top, 100) // アイコンとかぶらないように
+                .padding(.top, 100)
         }
         .onAppear {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
@@ -100,7 +99,6 @@ struct CalibrationView: View {
         return currentStep != .ready && currentStep != .finished
     }
     
-    // ターゲット座標
     private func targetPosition() -> CGPoint {
         let w = UIScreen.main.bounds.width
         let h = UIScreen.main.bounds.height
@@ -114,19 +112,37 @@ struct CalibrationView: View {
         case .midRight: return CGPoint(x: w * (1 - inset), y: h * 0.5)
         case .bottomRight: return CGPoint(x: w * (1 - inset), y: h * (1 - inset))
         case .bottomLeft: return CGPoint(x: w * inset, y: h * (1 - inset))
-        case .centerFinal: return CGPoint(x: w * 0.5, y: h * 0.5) // ★最後に戻る
+        case .centerFinal: return CGPoint(x: w * 0.5, y: h * 0.5)
         default: return CGPoint(x: w * 0.5, y: h * 0.5)
         }
     }
     
-    private func startCalibrationPhase() {
-        progress = 0.0
-        // 1点あたり1.2秒
-        withAnimation(.linear(duration: 1.2)) { progress = 1.0 }
+    // ★キモとなる処理：移動と計測を分ける
+    private func moveToNextStep(_ nextStep: Step) {
+        // 1. まずターゲットを移動させる
+        withAnimation(.easeInOut(duration: moveDuration)) {
+            currentStep = nextStep
+        }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+        // 2. 移動アニメーションが終わり、かつ一呼吸置いてから計測開始
+        DispatchQueue.main.asyncAfter(deadline: .now() + moveDuration + prepareDuration) {
+            startCalibrationPhase()
+        }
+    }
+    
+    private func startCalibrationPhase() {
+        // プログレスを0にしてからアニメーション開始
+        progress = 0.0
+        
+        // 3. ゆっくりリングを満たす
+        withAnimation(.linear(duration: recordingDuration)) {
+            progress = 1.0
+        }
+        
+        // 4. リングが満ちたらデータを記録して次へ
+        DispatchQueue.main.asyncAfter(deadline: .now() + recordingDuration) {
             recordData()
-            advanceStep()
+            determineNextStep()
         }
     }
     
@@ -149,32 +165,38 @@ struct CalibrationView: View {
         case .bottomLeft:
             gazeManager.calibrateSensitivity(lookingAt: CGPoint(x: inset, y: 1-inset), centerRaw: centerRaw)
         case .centerFinal:
-            // ★最後の仕上げ：もう一度中心を見て、オフセットを最終調整
             gazeManager.calibrateCenter()
         default: break
         }
     }
     
-    private func advanceStep() {
-        withAnimation {
-            switch currentStep {
-            case .ready: currentStep = .center
-            case .center: currentStep = .topLeft
-            case .topLeft: currentStep = .topRight
-            case .topRight: currentStep = .midLeft
-            case .midLeft: currentStep = .midRight
-            case .midRight: currentStep = .bottomRight
-            case .bottomRight: currentStep = .bottomLeft
-            case .bottomLeft: currentStep = .centerFinal // ★8点目
-            case .centerFinal: currentStep = .finished   // ★完了
-            case .finished: break
-            }
+    private func determineNextStep() {
+        // 次のステップを決めて移動開始関数を呼ぶ
+        var next: Step = .finished
+        
+        switch currentStep {
+        case .ready: next = .center
+        case .center: next = .topLeft
+        case .topLeft: next = .topRight
+        case .topRight: next = .midLeft
+        case .midLeft: next = .midRight
+        case .midRight: next = .bottomRight
+        case .bottomRight: next = .bottomLeft
+        case .bottomLeft: next = .centerFinal
+        case .centerFinal: next = .finished
+        case .finished: break
         }
-        if isCalibrating() { startCalibrationPhase() }
+        
+        if next == .finished {
+            // 完了時はアニメーションなしですぐ遷移
+            currentStep = .finished
+        } else {
+            // 通常時は移動フローへ
+            moveToNextStep(next)
+        }
     }
 }
 
-// ターゲットView (変更なし)
 struct CalibrationTarget: View {
     var progress: CGFloat
     var body: some View {
