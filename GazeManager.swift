@@ -8,10 +8,13 @@
 import SwiftUI
 import ARKit
 import Combine
+import simd
 
 @MainActor
 class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
-    // ... (既存のプロパティはそのまま) ...
+    // -----------------------------------------------------------
+    // MARK: - 公開プロパティ
+    // -----------------------------------------------------------
     @Published var cursorRelativePosition: CGPoint = CGPoint(x: 0.5, y: 0.5)
     @Published var isFaceDetected: Bool = false
     @Published var statusMessage: String = "起動中..."
@@ -22,10 +25,17 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     @Published var xOffset: CGFloat = 0.0
     @Published var yOffset: CGFloat = 0.0
     
-    // ジェスチャーリセット用
-    @Published var isResetting: Bool = false // リセット動作中か
-    private var gestureHoldTime: TimeInterval = 0
-    private let gestureThreshold: Float = 0.6 // 口の開き具合(0.0-1.0)
+    // 補正中フラグ
+    @Published var isAutoCorrecting: Bool = false
+    
+    // --- 自動補正用変数 ---
+    private var lastCalibratedHeadPosition: SIMD3<Float>? = nil
+    private let movementThreshold: Float = 0.05 // 5cm
+    
+    // --- 閉眼ジェスチャー用変数 ---
+    private var eyesClosedStartTime: Date? = nil
+    private let blinkThreshold: Float = 0.8 // 80%以上閉じていれば「閉」
+    private let requiredClosedDuration: TimeInterval = 3.0 // 3秒
     
     // スムージング係数
     @Published var smoothing: CGFloat = 0.1
@@ -56,53 +66,120 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         Task { @MainActor in
             self.isFaceDetected = true
             self.updateGaze(faceAnchor: faceAnchor)
-            self.checkFacialGesture(faceAnchor: faceAnchor) // ジェスチャー監視
+            self.checkHeadMovement(faceAnchor: faceAnchor) // 自動補正
+            self.checkEyeGesture(faceAnchor: faceAnchor)   // 手動補正(閉眼)
         }
     }
     
-    // ★追加: フェイシャルジェスチャーでのリセット機能
-    private func checkFacialGesture(faceAnchor: ARFaceAnchor) {
-        // "jawOpen" (口を開ける動作) の値を取得 (0.0 〜 1.0)
-        let jawOpenValue = faceAnchor.blendShapes[.jawOpen]?.floatValue ?? 0.0
+    // -----------------------------------------------------------
+    // MARK: - 閉眼ジェスチャー検知ロジック
+    // -----------------------------------------------------------
+    
+    private func checkEyeGesture(faceAnchor: ARFaceAnchor) {
+        // 左右の目の閉じ具合を取得
+        let leftBlink = faceAnchor.blendShapes[.eyeBlinkLeft]?.floatValue ?? 0.0
+        let rightBlink = faceAnchor.blendShapes[.eyeBlinkRight]?.floatValue ?? 0.0
         
-        if jawOpenValue > gestureThreshold {
-            // 閾値を超えていたらカウントアップ
-            gestureHoldTime += 0.02 // 約60fps想定で加算
-            
-            if gestureHoldTime > 1.5 { // 1.5秒維持したらリセット発動
-                triggerEmergencyReset()
-                gestureHoldTime = 0 // 連続発動防止
+        // 両目がしっかり閉じているか判定
+        let isEyesClosed = (leftBlink > blinkThreshold && rightBlink > blinkThreshold)
+        
+        if isEyesClosed {
+            // 目が閉じられた瞬間、時間を記録
+            if eyesClosedStartTime == nil {
+                eyesClosedStartTime = Date()
             }
         } else {
-            gestureHoldTime = 0
-            if isResetting { isResetting = false }
+            // 目が開いている状態
+            if let startTime = eyesClosedStartTime {
+                // 閉じていた時間を計算
+                let duration = Date().timeIntervalSince(startTime)
+                
+                // 3秒以上閉じていた場合、開けた瞬間にリセット発動
+                if duration >= requiredClosedDuration {
+                    performManualReset()
+                }
+                
+                // タイマーリセット
+                eyesClosedStartTime = nil
+            }
         }
     }
     
-    private func triggerEmergencyReset() {
-        // フィードバック
+    private func performManualReset() {
+        if isAutoCorrecting { return }
+        isAutoCorrecting = true
+        
+        // 成功フィードバック
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
         
-        // 現在の視線を「中央」として強制リセット
+        // 中央リセット実行
         calibrateCenter()
         
-        // ユーザーへの通知フラグ
-        self.isResetting = true
-        self.statusMessage = "✅ 位置ズレを補正しました"
+        // ★メッセージ修正済み
+        self.statusMessage = "自動補正しました。"
         
-        // 数秒後にメッセージを戻す
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            self.statusMessage = "稼働中"
-            self.isResetting = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+            if self.statusMessage == "自動補正しました。" {
+                self.statusMessage = "稼働中"
+                self.isAutoCorrecting = false
+            }
         }
     }
+    
+    // -----------------------------------------------------------
+    // MARK: - 自動位置補正ロジック
+    // -----------------------------------------------------------
+    
+    private func checkHeadMovement(faceAnchor: ARFaceAnchor) {
+        let currentPosition = SIMD3<Float>(
+            faceAnchor.transform.columns.3.x,
+            faceAnchor.transform.columns.3.y,
+            faceAnchor.transform.columns.3.z
+        )
+        
+        if lastCalibratedHeadPosition == nil {
+            lastCalibratedHeadPosition = currentPosition
+            return
+        }
+        
+        guard let lastPos = lastCalibratedHeadPosition else { return }
+        let distance = simd_distance(currentPosition, lastPos)
+        
+        // 5cm以上動き、かつ現在補正動作中でない場合
+        if distance > movementThreshold && !isAutoCorrecting {
+            performAutoCorrection(newPosition: currentPosition)
+        }
+    }
+    
+    private func performAutoCorrection(newPosition: SIMD3<Float>) {
+        isAutoCorrecting = true
+        
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.warning)
+        
+        calibrateCenter()
+        lastCalibratedHeadPosition = newPosition
+        
+        // ★メッセージ修正済み
+        self.statusMessage = "顔の位置ずれを検知し、自動補正しました。"
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+            if self.statusMessage == "顔の位置ずれを検知し、自動補正しました。" {
+                self.statusMessage = "稼働中"
+                self.isAutoCorrecting = false
+            }
+        }
+    }
+    
+    // -----------------------------------------------------------
+    // MARK: - 視線計算
+    // -----------------------------------------------------------
     
     private func updateGaze(faceAnchor: ARFaceAnchor) {
         let lookAtPoint = faceAnchor.lookAtPoint
         self.rawLookAtPoint = CGPoint(x: CGFloat(lookAtPoint.x), y: CGFloat(lookAtPoint.y))
         
-        // 計算ロジック（変更なし）
         let rawX = CGFloat(lookAtPoint.x)
         let rawY = CGFloat(lookAtPoint.y)
         
@@ -117,15 +194,17 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         self.cursorRelativePosition = CGPoint(x: smoothedX, y: smoothedY)
     }
     
-    // --- 以下、キャリブレーションロジック (既存と同じ) ---
-    
-    func getCurrentRaw() -> CGPoint { return rawLookAtPoint }
-    
     func calibrateCenter() {
         accumulatedSensX = []
         accumulatedSensY = []
         self.xOffset = -(rawLookAtPoint.x * sensitivityX)
         self.yOffset = (rawLookAtPoint.y * sensitivityY)
+        
+        if let currentFrame = arSession.currentFrame,
+           let anchor = currentFrame.anchors.first(where: { $0 is ARFaceAnchor }) {
+            let transform = anchor.transform.columns.3
+            self.lastCalibratedHeadPosition = SIMD3<Float>(transform.x, transform.y, transform.z)
+        }
     }
     
     func calibrateSensitivity(lookingAt targetPoint: CGPoint, centerRaw: CGPoint) {
@@ -153,4 +232,6 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         self.xOffset = -(centerRaw.x * sensitivityX)
         self.yOffset = (centerRaw.y * sensitivityY)
     }
+    
+    func getCurrentRaw() -> CGPoint { return rawLookAtPoint }
 }

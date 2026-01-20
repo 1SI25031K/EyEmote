@@ -51,7 +51,6 @@ struct CalibrationView: View {
         }
     }
     
-    // UI部品を切り出して見やすくしました
     var startScreen: some View {
         VStack(spacing: 30) {
             Image(systemName: "eye.fill")
@@ -63,19 +62,38 @@ struct CalibrationView: View {
                 .foregroundColor(.white)
             
             VStack(spacing: 15) {
-                Text("7つのポイントを見つめて精度を高めます。\n位置がズレた場合は、口を大きく開けると\nいつでも補正できます。")
-                    .multilineTextAlignment(.center)
-                    .foregroundColor(.gray)
+                Text("7つのポイントを見つめて精度を高めます。")
+                    .font(.title3)
+                    .foregroundColor(.white)
                 
-                HStack {
-                    Image(systemName: "mouth")
-                    Text("口を開けてリセット機能搭載")
+                // 機能説明ラベル（自動＆手動）
+                VStack(spacing: 10) {
+                    // 自動補正の説明
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.triangle.2.circlepath.camera.fill")
+                            .foregroundColor(.orange)
+                        Text("位置ズレ自動補正 ON")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.orange)
+                    }
+                    .padding(8)
+                    .background(Color.orange.opacity(0.15))
+                    .cornerRadius(8)
+                    
+                    // 手動補正（閉眼）の説明
+                    HStack(spacing: 8) {
+                        Image(systemName: "eye.slash.fill")
+                            .foregroundColor(.green)
+                        Text("3秒閉じて開けるとリセット")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.green)
+                    }
+                    .padding(8)
+                    .background(Color.green.opacity(0.15))
+                    .cornerRadius(8)
                 }
-                .font(.caption)
-                .padding()
-                .background(Color.orange.opacity(0.2))
-                .cornerRadius(8)
-                .foregroundColor(.orange)
             }
             .padding()
             
