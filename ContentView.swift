@@ -4,7 +4,10 @@ import ARKit
 struct ContentView: View {
     @StateObject private var gazeManager = GazeManager()
     @State private var selectedItem: String = "準備完了"
-    @State private var needsCalibration: Bool = true
+    
+    // 状態管理フラグ
+    @State private var isSplashing: Bool = true // 起動画面
+    @State private var needsCalibration: Bool = false // キャリブレーション
     
     let columns = [GridItem(.flexible()), GridItem(.flexible())]
     
@@ -12,12 +15,17 @@ struct ContentView: View {
         ZStack {
             GeometryReader { geometry in
                 ZStack {
-                    ARCameraView(session: gazeManager.arSession)
-                        .ignoresSafeArea()
-                        .opacity(0.3)
+                    // ARカメラ映像
+                    // Splash中は非表示にして、文章に集中させる
+                    if !isSplashing {
+                        ARCameraView(session: gazeManager.arSession)
+                            .ignoresSafeArea()
+                            .opacity(0.3)
+                            .transition(.opacity) // ふわっと表示
+                    }
                     
                     VStack {
-                        // ヘッダー (レイアウトシフトしない固定配置)
+                        // メインアプリのヘッダー
                         HStack {
                             Button(action: { needsCalibration = true }) {
                                 Image(systemName: "scope")
@@ -51,9 +59,8 @@ struct ContentView: View {
                         
                         Spacer()
                     }
-                    
                     // カーソル
-                    if gazeManager.isFaceDetected && !needsCalibration {
+                    if gazeManager.isFaceDetected && !needsCalibration && !isSplashing {
                         GazeCursorView(
                             position: CGPoint(
                                 x: gazeManager.cursorRelativePosition.x * geometry.size.width,
@@ -63,32 +70,40 @@ struct ContentView: View {
                     }
                 }
             }
-            // ★修正: 通知を「画面下部」に「控えめ」に表示 (Overlay)
+            // 通知バナー (Overlay)
             .overlay(alignment: .bottom) {
-                if !gazeManager.statusMessage.isEmpty {
+                if !gazeManager.statusMessage.isEmpty && !isSplashing {
                     Text(gazeManager.statusMessage)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial) // すりガラス風
-                        .background(Color.black.opacity(0.4))
-                        .foregroundColor(.white)
-                        .clipShape(Capsule()) // 角丸のカプセル型
-                        .shadow(radius: 4)
-                        .padding(.bottom, 50) // 下から少し浮かせる
+                        .font(.subheadline).fontWeight(.medium)
+                        .padding(.horizontal, 16).padding(.vertical, 8)
+                        .background(.ultraThinMaterial).background(Color.black.opacity(0.4))
+                        .foregroundColor(.white).clipShape(Capsule()).shadow(radius: 4)
+                        .padding(.bottom, 50)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                         .animation(.easeInOut, value: gazeManager.statusMessage)
                 }
             }
             
-            // キャリブレーション画面
+            // 2. キャリブレーション画面
             if needsCalibration {
                 CalibrationView(gazeManager: gazeManager) {
                     withAnimation { needsCalibration = false }
                 }
                 .transition(.opacity)
                 .zIndex(100)
+            }
+            
+            // 1. 起動画面 (Splash) - 最前面
+            if isSplashing {
+                SplashView {
+                    // 10秒経過後
+                    withAnimation(.easeOut(duration: 1.0)) {
+                        isSplashing = false
+                        needsCalibration = true // 次はキャリブレーションへ
+                    }
+                }
+                .zIndex(200)
+                .transition(.opacity)
             }
         }
     }
