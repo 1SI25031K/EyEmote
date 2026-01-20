@@ -15,7 +15,7 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     // 公開プロパティ
     @Published var cursorRelativePosition: CGPoint = CGPoint(x: 0.5, y: 0.5)
     @Published var isFaceDetected: Bool = false
-    @Published var statusMessage: String = "" // 初期値は空に（通知がない時は表示しない）
+    @Published var statusMessage: String = ""
     
     // 設定値
     @Published var sensitivityX: CGFloat = 2.0
@@ -29,10 +29,13 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     // --- 自動補正・静止検知用変数 ---
     private var lastCalibratedHeadPosition: SIMD3<Float>? = nil
     private var lastHeadPosition: SIMD3<Float>? = nil
-    private var lastMovementTime: Date = Date() // 最後に動いた時間
-    private let movementThreshold: Float = 0.05 // 5cm以上のズレで「移動」とみなす
-    private let stabilityDuration: TimeInterval = 5.0 // 5秒間静止
-    private var isWaitingForStability: Bool = false   // 静止待ち状態か
+    private var lastMovementTime: Date = Date()
+    private let movementThreshold: Float = 0.05
+    
+    // ★修正: 5.0 -> 3.0秒に変更 (より素早く反応)
+    private let stabilityDuration: TimeInterval = 3.0
+    
+    private var isWaitingForStability: Bool = false
     
     // 閉眼ジェスチャー用変数
     private var eyesClosedStartTime: Date? = nil
@@ -68,8 +71,8 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         Task { @MainActor in
             self.isFaceDetected = true
             self.updateGaze(faceAnchor: faceAnchor)
-            self.checkHeadStability(faceAnchor: faceAnchor) // 静止検知 & 自動補正
-            self.checkEyeGesture(faceAnchor: faceAnchor)    // 手動補正(閉眼)
+            self.checkHeadStability(faceAnchor: faceAnchor)
+            self.checkEyeGesture(faceAnchor: faceAnchor)
         }
     }
     
@@ -84,7 +87,6 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
             faceAnchor.transform.columns.3.z
         )
         
-        // 初回基準点設定
         if lastCalibratedHeadPosition == nil {
             lastCalibratedHeadPosition = currentPosition
             lastHeadPosition = currentPosition
@@ -97,21 +99,15 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         let distFromCalibrated = simd_distance(currentPosition, calibratedPos)
         
         if distFromCalibrated > movementThreshold {
-            // 大きくズレている状態。ここから「静止」の監視を始める
             isWaitingForStability = true
             
-            // 直前のフレームからの動きもチェック（現在動いている最中か？）
             if let lastFramePos = lastHeadPosition {
                 let distFromLastFrame = simd_distance(currentPosition, lastFramePos)
-                
-                // フレーム間でほとんど動いていなければ「静止中」とみなして時間を進める
-                // 動いていればタイマーリセット
-                if distFromLastFrame > 0.005 { // 5mm以上の動きでリセット
+                if distFromLastFrame > 0.005 {
                     lastMovementTime = Date()
                 }
             }
         } else {
-            // ズレていない（元の位置に戻った）なら監視解除
             isWaitingForStability = false
             lastMovementTime = Date()
         }
@@ -121,10 +117,9 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
             let timeSinceMove = Date().timeIntervalSince(lastMovementTime)
             
             if timeSinceMove >= stabilityDuration {
-                // 5秒間静止した！ -> 補正実行
                 performAutoCorrection(newPosition: currentPosition)
-                isWaitingForStability = false // 監視終了
-                lastMovementTime = Date()     // タイマーリセット
+                isWaitingForStability = false
+                lastMovementTime = Date()
             }
         }
         
@@ -138,18 +133,14 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
         
-        // 補正実行（現在見ている位置を中心とする）
         calibrateCenter()
-        
-        // 基準位置を更新（これで「ズレ」状態が解消される）
         lastCalibratedHeadPosition = newPosition
         
-        // 控えめな通知メッセージ
         self.statusMessage = "姿勢の変化に合わせて補正しました"
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
             if self.statusMessage == "姿勢の変化に合わせて補正しました" {
-                self.statusMessage = "" // 非表示にする
+                self.statusMessage = ""
                 self.isAutoCorrecting = false
             }
         }
@@ -187,7 +178,6 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         
         calibrateCenter()
         
-        // 手動時のメッセージ
         self.statusMessage = "補正完了"
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
@@ -199,7 +189,7 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     }
     
     // -----------------------------------------------------------
-    // MARK: - 視線計算 & 共通処理 (変更なし)
+    // MARK: - 視線計算 & 共通処理
     // -----------------------------------------------------------
     
     private func updateGaze(faceAnchor: ARFaceAnchor) {

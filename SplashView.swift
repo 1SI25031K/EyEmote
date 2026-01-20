@@ -8,15 +8,14 @@
 import SwiftUI
 
 struct SplashView: View {
-    // 完了時に呼ばれるクロージャ
     var onFinished: () -> Void
     
-    @State private var timeRemaining: Int = 10
+    // ★修正: 10秒 -> 8秒に変更
+    @State private var timeRemaining: Int = 7
     @State private var opacity: Double = 0.0
     
     var body: some View {
         ZStack {
-            // 背景: 深いブルーのグラデーション（知的な印象）
             LinearGradient(
                 gradient: Gradient(colors: [Color.black, Color(red: 0.1, green: 0.1, blue: 0.3)]),
                 startPoint: .top,
@@ -25,7 +24,6 @@ struct SplashView: View {
             .ignoresSafeArea()
             
             VStack(spacing: 40) {
-                // アプリアイコンやロゴ
                 Image(systemName: "eye.fill")
                     .font(.system(size: 80))
                     .foregroundColor(.blue)
@@ -33,7 +31,6 @@ struct SplashView: View {
                     .scaleEffect(opacity > 0 ? 1.0 : 0.8)
                     .animation(.easeOut(duration: 1.0), value: opacity)
                 
-                // ストーリーテリング (Social Impact)
                 VStack(spacing: 24) {
                     Text("EyEmote")
                         .font(.largeTitle).bold()
@@ -57,14 +54,14 @@ struct SplashView: View {
                 
                 Spacer()
                 
-                // カウントダウンリング
                 ZStack {
                     Circle()
                         .stroke(Color.white.opacity(0.1), lineWidth: 6)
                         .frame(width: 60, height: 60)
                     
+                    // ★修正: 分母を 10.0 -> 8.0 に変更
                     Circle()
-                        .trim(from: 0, to: CGFloat(timeRemaining) / 10.0)
+                        .trim(from: 0, to: CGFloat(timeRemaining) / 8.0)
                         .stroke(Color.blue, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                         .frame(width: 60, height: 60)
@@ -73,14 +70,13 @@ struct SplashView: View {
                     Text("\(timeRemaining)")
                         .font(.headline)
                         .foregroundColor(.white)
-                        .contentTransition(.numericText()) // 数字が滑らかに切り替わる(iOS17+)
+                        .contentTransition(.numericText())
                 }
                 .padding(.bottom, 50)
             }
             .padding()
         }
         .onAppear {
-            // フェードイン開始
             withAnimation { opacity = 1.0 }
             startTimer()
         }
@@ -92,7 +88,6 @@ struct SplashView: View {
                 timeRemaining -= 1
             } else {
                 timer.invalidate()
-                // 完了通知
                 withAnimation(.easeInOut(duration: 0.5)) {
                     onFinished()
                 }
