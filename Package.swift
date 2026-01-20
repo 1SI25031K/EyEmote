@@ -31,6 +31,9 @@ let package = Package(
                 .landscapeRight,
                 .landscapeLeft,
                 .portraitUpsideDown(.when(deviceFamilies: [.pad]))
+            ],
+            capabilities: [
+                .camera(purposeString: "Use the Camera for gaze input. ")
             ]
         )
     ],
@@ -40,5 +43,5 @@ let package = Package(
             path: "."
         )
     ],
-    swiftLanguageVersions: [.v6]
+    swiftLanguageVersions: [.version("6")]
 )
