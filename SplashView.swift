@@ -10,12 +10,15 @@ import SwiftUI
 struct SplashView: View {
     var onFinished: () -> Void
     
-    // ★修正: 10秒 -> 8秒に変更
-    @State private var timeRemaining: Int = 7
+    // 7秒カウントダウン
+    @State private var timeRemaining: CGFloat = 7.0
     @State private var opacity: Double = 0.0
+    // バーの進捗 (1.0 -> 0.0)
+    @State private var barProgress: CGFloat = 1.0
     
     var body: some View {
         ZStack {
+            // 背景グラデーション
             LinearGradient(
                 gradient: Gradient(colors: [Color.black, Color(red: 0.1, green: 0.1, blue: 0.3)]),
                 startPoint: .top,
@@ -23,56 +26,64 @@ struct SplashView: View {
             )
             .ignoresSafeArea()
             
-            VStack(spacing: 40) {
-                Image(systemName: "eye.fill")
-                    .font(.system(size: 80))
-                    .foregroundColor(.blue)
-                    .shadow(color: .blue.opacity(0.8), radius: 20)
-                    .scaleEffect(opacity > 0 ? 1.0 : 0.8)
-                    .animation(.easeOut(duration: 1.0), value: opacity)
+            VStack {
+                Spacer()
                 
-                VStack(spacing: 24) {
-                    Text("EyEmote")
-                        .font(.largeTitle).bold()
-                        .foregroundColor(.white)
+                // メインコンテンツ
+                VStack(spacing: 40) {
+                    Image(systemName: "eye.fill")
+                        .font(.system(size: 80))
+                        .foregroundColor(.blue)
+                        .shadow(color: .blue.opacity(0.8), radius: 20)
+                        .scaleEffect(opacity > 0 ? 1.0 : 0.8)
+                        .animation(.easeOut(duration: 1.0), value: opacity)
                     
-                    Text("このアプリは、ALS患者の方などが\n視線だけで世界と繋がれるように設計されました。")
-                        .font(.title3)
-                        .fontWeight(.medium)
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(.white.opacity(0.9))
-                        .lineSpacing(8)
-                    
-                    Text("あなたの目の動きを学習しています...\nリラックスして画面を見つめてください。")
-                        .font(.body)
-                        .foregroundColor(.gray)
-                        .padding(.top, 20)
+                    VStack(spacing: 24) {
+                        Text("EyEmote")
+                            .font(.largeTitle).bold()
+                            .foregroundColor(.white)
+                        
+                        Text("このアプリは、ALS患者の方などが\n視線だけで世界と繋がれるように設計されました。")
+                            .font(.title3)
+                            .fontWeight(.medium)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.white.opacity(0.9))
+                            .lineSpacing(8)
+                        
+                        Text("あなたの目の動きを学習しています...\nリラックスして画面を見つめてください。")
+                            .font(.body)
+                            .foregroundColor(.gray)
+                            .padding(.top, 20)
+                    }
+                    .opacity(opacity)
+                    .offset(y: opacity > 0 ? 0 : 20)
+                    .animation(.easeOut(duration: 1.0).delay(0.5), value: opacity)
                 }
-                .opacity(opacity)
-                .offset(y: opacity > 0 ? 0 : 20)
-                .animation(.easeOut(duration: 1.0).delay(0.5), value: opacity)
                 
                 Spacer()
                 
-                ZStack {
-                    Circle()
-                        .stroke(Color.white.opacity(0.1), lineWidth: 6)
-                        .frame(width: 60, height: 60)
-                    
-                    // ★修正: 分母を 10.0 -> 8.0 に変更
-                    Circle()
-                        .trim(from: 0, to: CGFloat(timeRemaining) / 8.0)
-                        .stroke(Color.blue, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .frame(width: 60, height: 60)
-                        .animation(.linear(duration: 1.0), value: timeRemaining)
-                    
-                    Text("\(timeRemaining)")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .contentTransition(.numericText())
+                // ★修正: カウントダウンバー
+                // 画面下部に配置し、幅が短くなっていくアニメーション
+                GeometryReader { geometry in
+                    VStack {
+                        Spacer()
+                        ZStack(alignment: .leading) {
+                            // 背景バー (薄い白)
+                            Rectangle()
+                                .fill(Color.white.opacity(0.2))
+                                .frame(height: 4)
+                            
+                            // 進行バー (青) - 中央に向かって短くなる、あるいは左から短くなる
+                            // ここでは「時間が減っていく」表現として、幅を減らします
+                            Rectangle()
+                                .fill(Color.blue)
+                                .frame(width: geometry.size.width * barProgress, height: 4)
+                                .shadow(color: .blue, radius: 4)
+                        }
+                    }
                 }
-                .padding(.bottom, 50)
+                .frame(height: 10) // 領域確保
+                .padding(.bottom, 20) // 下端からの余白
             }
             .padding()
         }
@@ -83,14 +94,15 @@ struct SplashView: View {
     }
     
     private func startTimer() {
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
-            if timeRemaining > 0 {
-                timeRemaining -= 1
-            } else {
-                timer.invalidate()
-                withAnimation(.easeInOut(duration: 0.5)) {
-                    onFinished()
-                }
+        // バーのアニメーション開始 (7秒かけて 1.0 -> 0.0)
+        withAnimation(.linear(duration: 7.0)) {
+            barProgress = 0.0
+        }
+        
+        // 7秒後に完了コールバック
+        DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) {
+            withAnimation(.easeInOut(duration: 0.5)) {
+                onFinished()
             }
         }
     }

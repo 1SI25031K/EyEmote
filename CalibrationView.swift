@@ -29,15 +29,14 @@ struct CalibrationView: View {
     @State private var progress: CGFloat = 0.0
     @State private var centerRaw: CGPoint = .zero
     
-    // ★音声合成用
+    // ★追加: ガイダンス字幕の表示フラグ
+    @State private var showInstructionText: Bool = false
+    
     private let synthesizer = AVSpeechSynthesizer()
     
-    // ★タイミング調整 (精度重視で少しゆったり)
-    // 移動スピード: 0.5秒 (サッと動く)
+    // タイミング調整
     private let moveDuration: Double = 0.5
-    // 待機時間: 0.5秒 (目が追いつくのを待つ)
     private let prepareDuration: Double = 0.5
-    // 計測時間: 1.5秒 (しっかり見つめる時間)
     private let recordingDuration: Double = 1.5
     
     // カラー設定: ライムグリーン
@@ -46,6 +45,24 @@ struct CalibrationView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            
+            // ★追加: 音声ガイダンスの字幕
+            if showInstructionText {
+                VStack {
+                    Spacer()
+                    Text("The viewpoint setup will begin shortly.\nWhen the ring appears, follow its position with your eyes.")
+                        .font(.title3)
+                        .fontWeight(.medium)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.white)
+                        .padding(20)
+                        .background(Color.black.opacity(0.7))
+                        .cornerRadius(12)
+                        .transition(.opacity)
+                    Spacer()
+                }
+                .zIndex(10) // リングより手前に表示
+            }
             
             if currentStep == .finished {
                 finishedScreen
@@ -58,21 +75,24 @@ struct CalibrationView: View {
             }
         }
         .onAppear {
-            // 画面表示時にシーケンス開始
             startSequenceWithVoice()
         }
     }
     
-    // ★音声案内と開始フロー
     private func startSequenceWithVoice() {
-        // 1. 音声読み上げ
-        let utterance = AVSpeechUtterance(string: "The viewpoint setup will begin shortly. When the ring appears, follow its position with your eyes.")
+        // 1. 字幕を表示
+        withAnimation { showInstructionText = true }
+        
+        // 2. 音声読み上げ
+        let text = "The viewpoint setup will begin shortly. When the ring appears, follow its position with your eyes."
+        let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-        utterance.rate = 0.5 // 少しゆっくり聞きやすく
+        utterance.rate = 0.5
         synthesizer.speak(utterance)
         
-        // 2. 読み上げ時間(約6秒)を待ってからリングを表示
+        // 3. 読み上げ終了想定時間(6秒)後に字幕を消してリング開始
         DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+            withAnimation { showInstructionText = false } // 字幕オフ
             moveToNextStep(.center)
         }
     }
@@ -98,7 +118,7 @@ struct CalibrationView: View {
                 .padding(.top, 100)
         }
         .onAppear {
-            // ★完了音 (Chime)
+            // 完了音 (Chime)
             AudioServicesPlaySystemSound(1022)
             
             withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
@@ -152,8 +172,8 @@ struct CalibrationView: View {
             progress = 1.0
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + recordingDuration) {
-            // ★ポイント完了音 (Tock)
-            AudioServicesPlaySystemSound(1104)
+            // ★修正: 音をもっと大きく (1057: Tink/Pin)
+            AudioServicesPlaySystemSound(1057)
             
             recordData()
             determineNextStep()
@@ -177,13 +197,9 @@ struct CalibrationView: View {
         case .bottomLeft:   gazeManager.calibrateSensitivity(lookingAt: CGPoint(x: inset, y: 1-inset), centerRaw: centerRaw)
         case .midLeft:      gazeManager.calibrateSensitivity(lookingAt: CGPoint(x: inset, y: 0.5), centerRaw: centerRaw)
         case .topLeft:      gazeManager.calibrateSensitivity(lookingAt: CGPoint(x: inset, y: inset), centerRaw: centerRaw)
-            
         case .innerBottomRight: gazeManager.calibrateSensitivity(lookingAt: CGPoint(x: 1-inner, y: 1-inner), centerRaw: centerRaw)
         case .innerTopLeft:     gazeManager.calibrateSensitivity(lookingAt: CGPoint(x: inner, y: inner), centerRaw: centerRaw)
-            
-        case .centerFinal:
-            gazeManager.calibrateCenter()
-            
+        case .centerFinal:  gazeManager.calibrateCenter()
         default: break
         }
     }
@@ -222,10 +238,12 @@ struct CalibrationTarget: View {
     
     var body: some View {
         ZStack {
+            // ★修正: 灰色の部分を「白 (不透明)」に変更
             Circle()
-                .stroke(Color.white.opacity(0.3), lineWidth: 4)
+                .stroke(Color.white, lineWidth: 4) // opacity(0.3)を削除
                 .frame(width: 60, height: 60)
             
+            // 進行リング (ライムグリーン)
             Circle()
                 .trim(from: 0, to: progress)
                 .stroke(color, style: StrokeStyle(lineWidth: 5, lineCap: .round))
@@ -233,6 +251,7 @@ struct CalibrationTarget: View {
                 .frame(width: 60, height: 60)
                 .shadow(color: color.opacity(0.8), radius: 8)
             
+            // 中心点
             Circle()
                 .fill(Color.white)
                 .frame(width: 8, height: 8)
