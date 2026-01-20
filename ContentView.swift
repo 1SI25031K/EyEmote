@@ -17,24 +17,7 @@ struct ContentView: View {
                         .opacity(0.3)
                     
                     VStack {
-                        // ★【追加】ステータス通知バナー
-                        // 「稼働中」以外のメッセージ（つまり補正時）は目立つように表示
-                        if gazeManager.statusMessage != "稼働中" {
-                            Text(gazeManager.statusMessage)
-                                .font(.headline)
-                                .padding()
-                                .frame(maxWidth: .infinity)
-                                .background(
-                                    // 自動補正ならオレンジ、手動なら緑、それ以外はグレー
-                                    gazeManager.statusMessage.contains("検知") ? Color.orange :
-                                    gazeManager.statusMessage.contains("自動補正") ? Color.green : Color.black.opacity(0.7)
-                                )
-                                .foregroundColor(.white)
-                                .transition(.move(edge: .top))
-                                .animation(.easeInOut, value: gazeManager.statusMessage)
-                        }
-                        
-                        // ヘッダー (既存)
+                        // ヘッダー (通知バーはここから削除し、Overlayへ移動)
                         HStack {
                             Button(action: { needsCalibration = true }) {
                                 Image(systemName: "scope")
@@ -48,10 +31,11 @@ struct ContentView: View {
                             Spacer()
                         }
                         .padding()
+                        .padding(.top, 60) // 通知バーとかぶらないように少し下げる
                         
                         Spacer()
                         
-                        // コンテンツグリッド (既存)
+                        // コンテンツグリッド
                         LazyVGrid(columns: columns, spacing: 30) {
                             let cursor = CGPoint(
                                 x: gazeManager.cursorRelativePosition.x * geometry.size.width,
@@ -68,7 +52,7 @@ struct ContentView: View {
                         Spacer()
                     }
                     
-                    // カーソル (既存)
+                    // カーソル
                     if gazeManager.isFaceDetected && !needsCalibration {
                         GazeCursorView(
                             position: CGPoint(
@@ -79,8 +63,24 @@ struct ContentView: View {
                     }
                 }
             }
+            .overlay(alignment: .top) {
+                // ★修正: ここに通知を置くことで、画面レイアウトを崩さずに上に乗せることができます
+                if gazeManager.statusMessage != "稼働中" {
+                    Text(gazeManager.statusMessage)
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            gazeManager.statusMessage.contains("位置ずれ") ? Color.orange :
+                            gazeManager.statusMessage.contains("自動補正") ? Color.green : Color.black.opacity(0.7)
+                        )
+                        .foregroundColor(.white)
+                        .transition(.move(edge: .top))
+                        .animation(.easeInOut, value: gazeManager.statusMessage)
+                }
+            }
             
-            // キャリブレーション画面 (既存)
+            // キャリブレーション画面
             if needsCalibration {
                 CalibrationView(gazeManager: gazeManager) {
                     withAnimation { needsCalibration = false }
@@ -92,7 +92,6 @@ struct ContentView: View {
     }
 }
 
-// 忘れずにこれもファイルの末尾に残しておいてください
 struct ARCameraView: UIViewRepresentable {
     let session: ARSession
     func makeUIView(context: Context) -> ARSCNView {

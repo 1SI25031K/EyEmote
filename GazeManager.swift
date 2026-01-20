@@ -12,12 +12,10 @@ import simd
 
 @MainActor
 class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
-    // -----------------------------------------------------------
-    // MARK: - 公開プロパティ
-    // -----------------------------------------------------------
+    // 公開プロパティ
     @Published var cursorRelativePosition: CGPoint = CGPoint(x: 0.5, y: 0.5)
     @Published var isFaceDetected: Bool = false
-    @Published var statusMessage: String = "起動中..."
+    @Published var statusMessage: String = "稼働中" // 初期値を変更
     
     // 設定値
     @Published var sensitivityX: CGFloat = 2.0
@@ -28,14 +26,15 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     // 補正中フラグ
     @Published var isAutoCorrecting: Bool = false
     
-    // --- 自動補正用変数 ---
+    // 自動補正用変数
     private var lastCalibratedHeadPosition: SIMD3<Float>? = nil
     private let movementThreshold: Float = 0.05 // 5cm
     
-    // --- 閉眼ジェスチャー用変数 ---
+    // 閉眼ジェスチャー用変数
     private var eyesClosedStartTime: Date? = nil
-    private let blinkThreshold: Float = 0.8 // 80%以上閉じていれば「閉」
-    private let requiredClosedDuration: TimeInterval = 3.0 // 3秒
+    // ★修正: 閾値を0.5に下げて、少し閉じただけでも反応しやすくする
+    private let blinkThreshold: Float = 0.5
+    private let requiredClosedDuration: TimeInterval = 3.0
     
     // スムージング係数
     @Published var smoothing: CGFloat = 0.1
@@ -65,41 +64,37 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         guard let faceAnchor = anchors.first as? ARFaceAnchor else { return }
         Task { @MainActor in
             self.isFaceDetected = true
+            // 先にGazeを更新して最新の座標を持っておく
             self.updateGaze(faceAnchor: faceAnchor)
-            self.checkHeadMovement(faceAnchor: faceAnchor) // 自動補正
-            self.checkEyeGesture(faceAnchor: faceAnchor)   // 手動補正(閉眼)
+            self.checkHeadMovement(faceAnchor: faceAnchor)
+            self.checkEyeGesture(faceAnchor: faceAnchor)
         }
     }
     
     // -----------------------------------------------------------
-    // MARK: - 閉眼ジェスチャー検知ロジック
+    // MARK: - 閉眼ジェスチャー (手動補正)
     // -----------------------------------------------------------
     
     private func checkEyeGesture(faceAnchor: ARFaceAnchor) {
-        // 左右の目の閉じ具合を取得
         let leftBlink = faceAnchor.blendShapes[.eyeBlinkLeft]?.floatValue ?? 0.0
         let rightBlink = faceAnchor.blendShapes[.eyeBlinkRight]?.floatValue ?? 0.0
         
-        // 両目がしっかり閉じているか判定
+        // 両目が閉じているか
         let isEyesClosed = (leftBlink > blinkThreshold && rightBlink > blinkThreshold)
         
         if isEyesClosed {
-            // 目が閉じられた瞬間、時間を記録
             if eyesClosedStartTime == nil {
                 eyesClosedStartTime = Date()
             }
         } else {
-            // 目が開いている状態
+            // 目が開いた
             if let startTime = eyesClosedStartTime {
-                // 閉じていた時間を計算
                 let duration = Date().timeIntervalSince(startTime)
                 
-                // 3秒以上閉じていた場合、開けた瞬間にリセット発動
+                // 3秒以上閉じていた場合
                 if duration >= requiredClosedDuration {
                     performManualReset()
                 }
-                
-                // タイマーリセット
                 eyesClosedStartTime = nil
             }
         }
@@ -109,18 +104,17 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         if isAutoCorrecting { return }
         isAutoCorrecting = true
         
-        // 成功フィードバック
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
         
-        // 中央リセット実行
+        // 手動リセット時は「ユーザーが正面を見ている」と仮定してキャリブレーション実行
         calibrateCenter()
         
-        // ★メッセージ修正済み
-        self.statusMessage = "自動補正しました。"
+        // ★ユーザー指定メッセージ
+        self.statusMessage = "３秒以上目を閉じていたため、自動補正しました。"
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-            if self.statusMessage == "自動補正しました。" {
+            if self.statusMessage.contains("３秒以上") {
                 self.statusMessage = "稼働中"
                 self.isAutoCorrecting = false
             }
@@ -128,7 +122,7 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     }
     
     // -----------------------------------------------------------
-    // MARK: - 自動位置補正ロジック
+    // MARK: - 頭の位置ズレ検知 (自動補正)
     // -----------------------------------------------------------
     
     private func checkHeadMovement(faceAnchor: ARFaceAnchor) {
@@ -146,7 +140,6 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         guard let lastPos = lastCalibratedHeadPosition else { return }
         let distance = simd_distance(currentPosition, lastPos)
         
-        // 5cm以上動き、かつ現在補正動作中でない場合
         if distance > movementThreshold && !isAutoCorrecting {
             performAutoCorrection(newPosition: currentPosition)
         }
@@ -158,14 +151,16 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.warning)
         
-        calibrateCenter()
+        // ★重要修正: ここで calibrateCenter() を呼ぶと、
+        // ユーザーがどこを見ているか分からないのに中央設定してしまい、操作不能になります。
+        // そのため、「頭の基準位置」だけを更新し、視線オフセットはいじらないようにします。
         lastCalibratedHeadPosition = newPosition
         
-        // ★メッセージ修正済み
+        // ★ユーザー指定メッセージ
         self.statusMessage = "顔の位置ずれを検知し、自動補正しました。"
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-            if self.statusMessage == "顔の位置ずれを検知し、自動補正しました。" {
+            if self.statusMessage.contains("位置ずれ") {
                 self.statusMessage = "稼働中"
                 self.isAutoCorrecting = false
             }
@@ -173,7 +168,7 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     }
     
     // -----------------------------------------------------------
-    // MARK: - 視線計算
+    // MARK: - 視線計算 & 共通処理
     // -----------------------------------------------------------
     
     private func updateGaze(faceAnchor: ARFaceAnchor) {
@@ -200,6 +195,7 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         self.xOffset = -(rawLookAtPoint.x * sensitivityX)
         self.yOffset = (rawLookAtPoint.y * sensitivityY)
         
+        // 頭の位置も更新しておく
         if let currentFrame = arSession.currentFrame,
            let anchor = currentFrame.anchors.first(where: { $0 is ARFaceAnchor }) {
             let transform = anchor.transform.columns.3
