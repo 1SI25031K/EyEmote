@@ -22,28 +22,32 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     @Published var sensitivityY: CGFloat = 2.0
     @Published var xOffset: CGFloat = 0.0
     @Published var yOffset: CGFloat = 0.0
+    @Published var smoothing: CGFloat = 0.1
     
     // 補正中フラグ
     @Published var isAutoCorrecting: Bool = false
     
-    // --- 自動補正・静止検知用変数 ---
+    // --- 芸術的表現用データ (NEW) ---
+    // 視線の移動速度 (0.0 〜 1.0) - 液体の波紋の強さに使用
+    @Published var gazeVelocity: CGFloat = 0.0
+    // 3秒間の長押し(Deep Blink)完了通知
+    var onDeepBlinkDetected: (() -> Void)? = nil
+    
+    // 内部計算用
+    private var lastCursorPosition: CGPoint = .zero
+    private var lastUpdateTime: Date = Date()
+    
+    // --- 既存の変数 ---
     private var lastCalibratedHeadPosition: SIMD3<Float>? = nil
     private var lastHeadPosition: SIMD3<Float>? = nil
     private var lastMovementTime: Date = Date()
     private let movementThreshold: Float = 0.05
-    
-    // 3.0秒静止で補正
     private let stabilityDuration: TimeInterval = 3.0
-    
     private var isWaitingForStability: Bool = false
     
-    // 閉眼ジェスチャー用変数
     private var eyesClosedStartTime: Date? = nil
     private let blinkThreshold: Float = 0.5
     private let requiredClosedDuration: TimeInterval = 3.0
-    
-    // スムージング係数
-    @Published var smoothing: CGFloat = 0.1
     
     var arSession = ARSession()
     private var rawLookAtPoint: CGPoint = .zero
@@ -77,121 +81,7 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     }
     
     // -----------------------------------------------------------
-    // MARK: - 頭の位置ズレ & 静止検知ロジック
-    // -----------------------------------------------------------
-    
-    private func checkHeadStability(faceAnchor: ARFaceAnchor) {
-        let currentPosition = SIMD3<Float>(
-            faceAnchor.transform.columns.3.x,
-            faceAnchor.transform.columns.3.y,
-            faceAnchor.transform.columns.3.z
-        )
-        
-        if lastCalibratedHeadPosition == nil {
-            lastCalibratedHeadPosition = currentPosition
-            lastHeadPosition = currentPosition
-            return
-        }
-        
-        guard let calibratedPos = lastCalibratedHeadPosition else { return }
-        
-        // 1. 基準点からのズレをチェック
-        let distFromCalibrated = simd_distance(currentPosition, calibratedPos)
-        
-        if distFromCalibrated > movementThreshold {
-            isWaitingForStability = true
-            
-            if let lastFramePos = lastHeadPosition {
-                let distFromLastFrame = simd_distance(currentPosition, lastFramePos)
-                if distFromLastFrame > 0.005 {
-                    lastMovementTime = Date()
-                }
-            }
-        } else {
-            isWaitingForStability = false
-            lastMovementTime = Date()
-        }
-        
-        // 2. 静止時間の判定
-        if isWaitingForStability {
-            let timeSinceMove = Date().timeIntervalSince(lastMovementTime)
-            
-            if timeSinceMove >= stabilityDuration {
-                performAutoCorrection(newPosition: currentPosition)
-                isWaitingForStability = false
-                lastMovementTime = Date()
-            }
-        }
-        
-        lastHeadPosition = currentPosition
-    }
-    
-    private func performAutoCorrection(newPosition: SIMD3<Float>) {
-        if isAutoCorrecting { return }
-        isAutoCorrecting = true
-        
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.success)
-        
-        calibrateCenter()
-        lastCalibratedHeadPosition = newPosition
-        
-        // ★英語メッセージ
-        self.statusMessage = "Adjusted for posture change"
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            if self.statusMessage == "Adjusted for posture change" {
-                self.statusMessage = ""
-                self.isAutoCorrecting = false
-            }
-        }
-    }
-    
-    // -----------------------------------------------------------
-    // MARK: - 閉眼ジェスチャー (手動補正)
-    // -----------------------------------------------------------
-    
-    private func checkEyeGesture(faceAnchor: ARFaceAnchor) {
-        let leftBlink = faceAnchor.blendShapes[.eyeBlinkLeft]?.floatValue ?? 0.0
-        let rightBlink = faceAnchor.blendShapes[.eyeBlinkRight]?.floatValue ?? 0.0
-        
-        let isEyesClosed = (leftBlink > blinkThreshold && rightBlink > blinkThreshold)
-        
-        if isEyesClosed {
-            if eyesClosedStartTime == nil { eyesClosedStartTime = Date() }
-        } else {
-            if let startTime = eyesClosedStartTime {
-                let duration = Date().timeIntervalSince(startTime)
-                if duration >= requiredClosedDuration {
-                    performManualReset()
-                }
-                eyesClosedStartTime = nil
-            }
-        }
-    }
-    
-    private func performManualReset() {
-        if isAutoCorrecting { return }
-        isAutoCorrecting = true
-        
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.success)
-        
-        calibrateCenter()
-        
-        // ★英語メッセージ
-        self.statusMessage = "Calibration complete"
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            if self.statusMessage == "Calibration complete" {
-                self.statusMessage = ""
-                self.isAutoCorrecting = false
-            }
-        }
-    }
-    
-    // -----------------------------------------------------------
-    // MARK: - 視線計算 & 共通処理
+    // MARK: - 視線計算 & 速度検知 (Update)
     // -----------------------------------------------------------
     
     private func updateGaze(faceAnchor: ARFaceAnchor) {
@@ -209,15 +99,128 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         let smoothedX = currentX + (targetX - currentX) * smoothing
         let smoothedY = currentY + (targetY - currentY) * smoothing
         
-        self.cursorRelativePosition = CGPoint(x: smoothedX, y: smoothedY)
+        let newPos = CGPoint(x: smoothedX, y: smoothedY)
+        self.cursorRelativePosition = newPos
+        
+        // --- 速度計算 (Velocity) ---
+        let now = Date()
+        let timeDelta = now.timeIntervalSince(lastUpdateTime)
+        if timeDelta > 0 {
+            // 距離を計算
+            let dx = newPos.x - lastCursorPosition.x
+            let dy = newPos.y - lastCursorPosition.y
+            let distance = sqrt(dx*dx + dy*dy)
+            
+            // 速度 (画面比率/秒)
+            let rawVelocity = distance / CGFloat(timeDelta)
+            
+            // 扱いやすい値に正規化 (0.0〜1.0程度に収まるように調整)
+            // 視線が速いときは1.0に近づく
+            let normalizedVelocity = min(rawVelocity * 2.0, 1.0)
+            
+            // 少しスムージングをかけて急激な変化を抑える
+            self.gazeVelocity = (self.gazeVelocity * 0.8) + (normalizedVelocity * 0.2)
+        }
+        
+        self.lastCursorPosition = newPos
+        self.lastUpdateTime = now
+    }
+    
+    // -----------------------------------------------------------
+    // MARK: - 閉眼ジェスチャー
+    // -----------------------------------------------------------
+    
+    private func checkEyeGesture(faceAnchor: ARFaceAnchor) {
+        let leftBlink = faceAnchor.blendShapes[.eyeBlinkLeft]?.floatValue ?? 0.0
+        let rightBlink = faceAnchor.blendShapes[.eyeBlinkRight]?.floatValue ?? 0.0
+        
+        let isEyesClosed = (leftBlink > blinkThreshold && rightBlink > blinkThreshold)
+        
+        if isEyesClosed {
+            if eyesClosedStartTime == nil { eyesClosedStartTime = Date() }
+        } else {
+            if let startTime = eyesClosedStartTime {
+                let duration = Date().timeIntervalSince(startTime)
+                if duration >= requiredClosedDuration {
+                    // Deep Blink検出
+                    if let callback = onDeepBlinkDetected {
+                        callback()
+                    } else {
+                        // コールバックが設定されていなければ通常のリセット
+                        performManualReset()
+                    }
+                }
+                eyesClosedStartTime = nil
+            }
+        }
+    }
+    
+    // (以下、既存のキャリブレーション・補正ロジックは変更なしで維持)
+    private func checkHeadStability(faceAnchor: ARFaceAnchor) {
+        let currentPosition = SIMD3<Float>(
+            faceAnchor.transform.columns.3.x,
+            faceAnchor.transform.columns.3.y,
+            faceAnchor.transform.columns.3.z
+        )
+        if lastCalibratedHeadPosition == nil {
+            lastCalibratedHeadPosition = currentPosition; lastHeadPosition = currentPosition; return
+        }
+        guard let calibratedPos = lastCalibratedHeadPosition else { return }
+        let distFromCalibrated = simd_distance(currentPosition, calibratedPos)
+        
+        if distFromCalibrated > movementThreshold {
+            isWaitingForStability = true
+            if let lastFramePos = lastHeadPosition {
+                let distFromLastFrame = simd_distance(currentPosition, lastFramePos)
+                if distFromLastFrame > 0.005 { lastMovementTime = Date() }
+            }
+        } else {
+            isWaitingForStability = false; lastMovementTime = Date()
+        }
+        
+        if isWaitingForStability {
+            let timeSinceMove = Date().timeIntervalSince(lastMovementTime)
+            if timeSinceMove >= stabilityDuration {
+                performAutoCorrection(newPosition: currentPosition)
+                isWaitingForStability = false; lastMovementTime = Date()
+            }
+        }
+        lastHeadPosition = currentPosition
+    }
+    
+    private func performAutoCorrection(newPosition: SIMD3<Float>) {
+        if isAutoCorrecting { return }
+        isAutoCorrecting = true
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+        calibrateCenter()
+        lastCalibratedHeadPosition = newPosition
+        self.statusMessage = "Adjusted for posture change"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            if self.statusMessage == "Adjusted for posture change" {
+                self.statusMessage = ""; self.isAutoCorrecting = false
+            }
+        }
+    }
+    
+    private func performManualReset() {
+        if isAutoCorrecting { return }
+        isAutoCorrecting = true
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+        calibrateCenter()
+        self.statusMessage = "Calibration complete"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            if self.statusMessage == "Calibration complete" {
+                self.statusMessage = ""; self.isAutoCorrecting = false
+            }
+        }
     }
     
     func calibrateCenter() {
-        accumulatedSensX = []
-        accumulatedSensY = []
+        accumulatedSensX = []; accumulatedSensY = []
         self.xOffset = -(rawLookAtPoint.x * sensitivityX)
         self.yOffset = (rawLookAtPoint.y * sensitivityY)
-        
         if let currentFrame = arSession.currentFrame,
            let anchor = currentFrame.anchors.first(where: { $0 is ARFaceAnchor }) {
             let transform = anchor.transform.columns.3
@@ -226,27 +229,12 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     }
     
     func calibrateSensitivity(lookingAt targetPoint: CGPoint, centerRaw: CGPoint) {
-        let screenDeltaX = targetPoint.x - 0.5
-        let screenDeltaY = targetPoint.y - 0.5
-        let rawDeltaX = rawLookAtPoint.x - centerRaw.x
-        let rawDeltaY = rawLookAtPoint.y - centerRaw.y
-        
-        if abs(rawDeltaX) > 0.01 {
-            let newSensX = abs(screenDeltaX / rawDeltaX)
-            accumulatedSensX.append(newSensX)
-        }
-        if abs(rawDeltaY) > 0.01 {
-            let newSensY = abs(screenDeltaY / rawDeltaY)
-            accumulatedSensY.append(newSensY)
-        }
-        
-        if !accumulatedSensX.isEmpty {
-            self.sensitivityX = accumulatedSensX.reduce(0, +) / CGFloat(accumulatedSensX.count)
-        }
-        if !accumulatedSensY.isEmpty {
-            self.sensitivityY = accumulatedSensY.reduce(0, +) / CGFloat(accumulatedSensY.count)
-        }
-        
+        let screenDeltaX = targetPoint.x - 0.5; let screenDeltaY = targetPoint.y - 0.5
+        let rawDeltaX = rawLookAtPoint.x - centerRaw.x; let rawDeltaY = rawLookAtPoint.y - centerRaw.y
+        if abs(rawDeltaX) > 0.01 { accumulatedSensX.append(abs(screenDeltaX / rawDeltaX)) }
+        if abs(rawDeltaY) > 0.01 { accumulatedSensY.append(abs(screenDeltaY / rawDeltaY)) }
+        if !accumulatedSensX.isEmpty { self.sensitivityX = accumulatedSensX.reduce(0, +) / CGFloat(accumulatedSensX.count) }
+        if !accumulatedSensY.isEmpty { self.sensitivityY = accumulatedSensY.reduce(0, +) / CGFloat(accumulatedSensY.count) }
         self.xOffset = -(centerRaw.x * sensitivityX)
         self.yOffset = (centerRaw.y * sensitivityY)
     }

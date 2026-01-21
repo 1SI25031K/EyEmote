@@ -1,105 +1,117 @@
 import SwiftUI
 import ARKit
 
+@available(iOS 17.0, *)
 struct ContentView: View {
     @StateObject private var gazeManager = GazeManager()
-    @State private var selectedItem: String = "Setup Completed!"
+    @State private var selectedItem: String = "Ready"
     
-    // 状態管理フラグ
-    @State private var isSplashing: Bool = true // 起動画面
-    @State private var needsCalibration: Bool = false // キャリブレーション
+    // フロー管理
+    enum AppState {
+        case splash
+        case calibration
+        case fluidSoul // ★追加: 感情表現パート
+        case mainApp
+    }
+    
+    @State private var appState: AppState = .splash
     
     let columns = [GridItem(.flexible()), GridItem(.flexible())]
     
     var body: some View {
         ZStack {
-            GeometryReader { geometry in
-                ZStack {
-                    // ARカメラ映像
-                    // Splash中は非表示にして、文章に集中させる
-                    if !isSplashing {
+            // 背景レイヤー (メインアプリ用)
+            if appState == .mainApp {
+                GeometryReader { geometry in
+                    ZStack {
                         ARCameraView(session: gazeManager.arSession)
                             .ignoresSafeArea()
                             .opacity(0.3)
-                            .transition(.opacity) // ふわっと表示
-                    }
-                    
-                    VStack {
-                        // メインアプリのヘッダー
-                        HStack {
-                            Button(action: { needsCalibration = true }) {
-                                Image(systemName: "scope")
-                                    .padding()
-                                    .background(.thinMaterial)
-                                    .clipShape(Circle())
+                        
+                        VStack {
+                            // Header
+                            HStack {
+                                Button(action: { appState = .calibration }) {
+                                    Image(systemName: "scope")
+                                        .padding()
+                                        .background(.thinMaterial)
+                                        .clipShape(Circle())
+                                }
+                                Spacer()
+                                Text(selectedItem)
+                                    .font(.title2).bold().foregroundColor(.white)
+                                Spacer()
                             }
-                            Spacer()
-                            Text(selectedItem)
-                                .font(.title2).bold().foregroundColor(.white)
-                            Spacer()
-                        }
-                        .padding()
-                        .padding(.top, 40)
-                        
-                        Spacer()
-                        
-                        // コンテンツグリッド
-                        LazyVGrid(columns: columns, spacing: 30) {
-                            let cursor = CGPoint(
-                                x: gazeManager.cursorRelativePosition.x * geometry.size.width,
-                                y: gazeManager.cursorRelativePosition.y * geometry.size.height
-                            )
+                            .padding().padding(.top, 40)
                             
-                            GazeButton(title: "Like", icon: "hand.thumbsup.fill", action: { selectedItem = "いいね！" }, cursorPosition: cursor)
-                            GazeButton(title: "Play", icon: "play.circle.fill", action: { selectedItem = "再生中" }, cursorPosition: cursor)
-                            GazeButton(title: "Next", icon: "forward.fill", action: { selectedItem = "次へ" }, cursorPosition: cursor)
-                            GazeButton(title: "Menu", icon: "list.bullet", action: { selectedItem = "メニュー" }, cursorPosition: cursor)
+                            Spacer()
+                            
+                            // Buttons Grid
+                            LazyVGrid(columns: columns, spacing: 30) {
+                                let cursor = CGPoint(
+                                    x: gazeManager.cursorRelativePosition.x * geometry.size.width,
+                                    y: gazeManager.cursorRelativePosition.y * geometry.size.height
+                                )
+                                GazeButton(title: "Like", icon: "hand.thumbsup.fill", action: { selectedItem = "Liked" }, cursorPosition: cursor)
+                                GazeButton(title: "Play", icon: "play.circle.fill", action: { selectedItem = "Playing" }, cursorPosition: cursor)
+                                GazeButton(title: "Next", icon: "forward.fill", action: { selectedItem = "Next" }, cursorPosition: cursor)
+                                GazeButton(title: "Menu", icon: "list.bullet", action: { selectedItem = "Menu" }, cursorPosition: cursor)
+                            }
+                            .padding(40)
+                            Spacer()
                         }
-                        .padding(40)
                         
-                        Spacer()
-                    }
-                    // カーソル
-                    if gazeManager.isFaceDetected && !needsCalibration && !isSplashing {
-                        GazeCursorView(
-                            position: CGPoint(
-                                x: gazeManager.cursorRelativePosition.x * geometry.size.width,
-                                y: gazeManager.cursorRelativePosition.y * geometry.size.height
+                        if gazeManager.isFaceDetected {
+                            GazeCursorView(
+                                position: CGPoint(
+                                    x: gazeManager.cursorRelativePosition.x * geometry.size.width,
+                                    y: gazeManager.cursorRelativePosition.y * geometry.size.height
+                                )
                             )
-                        )
+                        }
                     }
                 }
-            }
-            // 通知バナー (Overlay)
-            .overlay(alignment: .bottom) {
-                if !gazeManager.statusMessage.isEmpty && !isSplashing {
-                    Text(gazeManager.statusMessage)
-                        .font(.subheadline).fontWeight(.medium)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(.ultraThinMaterial).background(Color.black.opacity(0.4))
-                        .foregroundColor(.white).clipShape(Capsule()).shadow(radius: 4)
-                        .padding(.bottom, 50)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                        .animation(.easeInOut, value: gazeManager.statusMessage)
+                .overlay(alignment: .bottom) {
+                    // 通知バー
+                    if !gazeManager.statusMessage.isEmpty {
+                        Text(gazeManager.statusMessage)
+                            .font(.subheadline).fontWeight(.medium)
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                            .background(.ultraThinMaterial).background(Color.black.opacity(0.4))
+                            .foregroundColor(.white).clipShape(Capsule()).shadow(radius: 4)
+                            .padding(.bottom, 50)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                            .animation(.easeInOut, value: gazeManager.statusMessage)
+                    }
                 }
             }
             
-            // 2. キャリブレーション画面
-            if needsCalibration {
+            // --- 各フェーズのビュー遷移 ---
+            
+            // 3. Fluid Soul Experience (Artistic)
+            if appState == .fluidSoul {
+                FluidSoulView(gazeManager: gazeManager) {
+                    withAnimation { appState = .mainApp }
+                }
+                .transition(.opacity)
+                .zIndex(150)
+            }
+            
+            // 2. Calibration
+            if appState == .calibration {
                 CalibrationView(gazeManager: gazeManager) {
-                    withAnimation { needsCalibration = false }
+                    // キャリブレーション完了後、Fluid Soulへ
+                    withAnimation { appState = .fluidSoul }
                 }
                 .transition(.opacity)
                 .zIndex(100)
             }
             
-            // 1. 起動画面 (Splash) - 最前面
-            if isSplashing {
+            // 1. Splash
+            if appState == .splash {
                 SplashView {
-                    // 10秒経過後
                     withAnimation(.easeOut(duration: 1.0)) {
-                        isSplashing = false
-                        needsCalibration = true // 次はキャリブレーションへ
+                        appState = .calibration
                     }
                 }
                 .zIndex(200)
@@ -109,6 +121,7 @@ struct ContentView: View {
     }
 }
 
+// ARCameraView (維持)
 struct ARCameraView: UIViewRepresentable {
     let session: ARSession
     func makeUIView(context: Context) -> ARSCNView {
