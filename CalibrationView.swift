@@ -41,7 +41,7 @@ struct CalibrationView: View {
             if showInstructionText {
                 VStack {
                     Spacer()
-                    Text("The viewpoint setup will begin shortly.\nWhen the ring appears, follow its position with your eyes.")
+                    Text("The viewpoint setup will begin shortly. Please follow the position of the dot inside the ring with your eyes.")
                         .font(.body)
                         .fontWeight(.medium)
                         .multilineTextAlignment(.center)
@@ -82,7 +82,7 @@ struct CalibrationView: View {
     private func startSequenceWithVoice() {
         withAnimation(.easeOut(duration: 0.5)) { showInstructionText = true }
         
-        let text = "The viewpoint setup will begin shortly. When the ring appears, follow its position with your eyes."
+        let text = "The viewpoint setup will begin shortly. Please follow the position of the dot inside the ring with your eyes."
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
         utterance.rate = 0.5
