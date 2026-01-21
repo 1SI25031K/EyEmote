@@ -32,7 +32,7 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     private var lastMovementTime: Date = Date()
     private let movementThreshold: Float = 0.05
     
-    // ★修正: 5.0 -> 3.0秒に変更 (より素早く反応)
+    // 3.0秒静止で補正
     private let stabilityDuration: TimeInterval = 3.0
     
     private var isWaitingForStability: Bool = false
@@ -57,7 +57,7 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     
     private func setupAR() {
         guard ARFaceTrackingConfiguration.isSupported else {
-            statusMessage = "❌ 非対応機種です"
+            statusMessage = "❌ Device not supported"
             return
         }
         let configuration = ARFaceTrackingConfiguration()
@@ -136,10 +136,11 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         calibrateCenter()
         lastCalibratedHeadPosition = newPosition
         
-        self.statusMessage = "姿勢の変化に合わせて補正しました"
+        // ★英語メッセージ
+        self.statusMessage = "Adjusted for posture change"
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            if self.statusMessage == "姿勢の変化に合わせて補正しました" {
+            if self.statusMessage == "Adjusted for posture change" {
                 self.statusMessage = ""
                 self.isAutoCorrecting = false
             }
@@ -178,10 +179,11 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         
         calibrateCenter()
         
-        self.statusMessage = "補正完了"
+        // ★英語メッセージ
+        self.statusMessage = "Calibration complete"
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            if self.statusMessage == "補正完了" {
+            if self.statusMessage == "Calibration complete" {
                 self.statusMessage = ""
                 self.isAutoCorrecting = false
             }

@@ -12,7 +12,7 @@ struct CalibrationView: View {
     @ObservedObject var gazeManager: GazeManager
     var onComplete: () -> Void
     
-    // 12点キャリブレーション (Step定義は変更なし)
+    // 12点キャリブレーション
     enum Step {
         case ready, center, topCenter, topRight, midRight, bottomRight, bottomCenter, bottomLeft, midLeft, topLeft, innerBottomRight, innerTopLeft, centerFinal, finished
     }
@@ -29,28 +29,27 @@ struct CalibrationView: View {
     private let prepareDuration: Double = 0.5
     private let recordingDuration: Double = 1.5
     
-    // カラー設定: ネオンライム (発光感アップ)
+    // カラー設定: ネオンライム
     private let themeColor = Color(red: 0.8, green: 1.0, blue: 0.2)
     
     var body: some View {
         ZStack {
-            // 背景: 完全な黒 (Liquid Glassを目立たせるため)
             Color.black.ignoresSafeArea()
             
-            // ★ Liquid Glass Instruction Text
+            // ★ Liquid Glass Instruction Text (英語)
             if showInstructionText {
                 VStack {
                     Spacer()
-                    Text("The viewpoint setup will begin shortly. Please follow the position of the dot inside the ring with your eyes.")
+                    // ★英語テキストに戻しました
+                    Text("The viewpoint setup will begin shortly.\nWhen the ring appears, follow its position with your eyes.")
                         .font(.body)
                         .fontWeight(.medium)
                         .multilineTextAlignment(.center)
                         .foregroundColor(.white)
                         .padding(.vertical, 16)
                         .padding(.horizontal, 24)
-                        // ここがLiquid Glassの魔法
-                        .background(.ultraThinMaterial) // 磨りガラス
-                        .background(Color.white.opacity(0.1)) // 微かな白
+                        .background(.ultraThinMaterial)
+                        .background(Color.white.opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: 20))
                         .overlay(
                             RoundedRectangle(cornerRadius: 20)
@@ -68,7 +67,6 @@ struct CalibrationView: View {
             }
             
             if isCalibrating() {
-                // 新しいLiquid Glassターゲット
                 LiquidCalibrationTarget(progress: progress, color: themeColor)
                     .position(targetPosition())
                     .animation(.easeInOut(duration: moveDuration), value: currentStep)
@@ -82,7 +80,8 @@ struct CalibrationView: View {
     private func startSequenceWithVoice() {
         withAnimation(.easeOut(duration: 0.5)) { showInstructionText = true }
         
-        let text = "The viewpoint setup will begin shortly. Please follow the position of the dot inside the ring with your eyes."
+        // ★英語での読み上げ設定 (en-US)
+        let text = "The viewpoint setup will begin shortly. When the ring appears, follow its position with your eyes."
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
         utterance.rate = 0.5
@@ -97,11 +96,10 @@ struct CalibrationView: View {
     var finishedScreen: some View {
         VStack {
             ZStack {
-                // 完了時の演出もLiquidに
                 Circle()
                     .fill(themeColor)
                     .frame(width: 80, height: 80)
-                    .shadow(color: themeColor.opacity(0.6), radius: 20) // グロー
+                    .shadow(color: themeColor.opacity(0.6), radius: 20)
                     .scaleEffect(progress)
                 
                 Image(systemName: "checkmark")
@@ -111,13 +109,14 @@ struct CalibrationView: View {
             }
             .position(x: UIScreen.main.bounds.width * 0.5, y: UIScreen.main.bounds.height * 0.5)
             
+            // ★英語メッセージ
             Text("Setup Complete")
                 .font(.title).bold().foregroundColor(.white)
                 .padding(.top, 100)
                 .shadow(color: .white.opacity(0.5), radius: 10)
         }
         .onAppear {
-            AudioServicesPlaySystemSound(1022)
+            AudioServicesPlaySystemSound(1022) // Chime
             withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) { progress = 1.0 }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { onComplete() }
         }
@@ -206,26 +205,24 @@ struct CalibrationView: View {
     }
 }
 
-// ★ 新しい Liquid Glass Design のターゲット
+// Liquid Glass Design Target (変更なし)
 struct LiquidCalibrationTarget: View {
     var progress: CGFloat
     var color: Color
     
     var body: some View {
         ZStack {
-            // 1. フロストガラスの軌道 (Frosted Track)
-            // 単なる白線ではなく、半透明のガラスリングにする
+            // 1. フロストガラスの軌道
             Circle()
-                .strokeBorder(Color.white.opacity(0.15), lineWidth: 6) // ベース
+                .strokeBorder(Color.white.opacity(0.15), lineWidth: 6)
                 .background(
                     Circle()
                         .stroke(Color.white.opacity(0.1), lineWidth: 8)
-                        .blur(radius: 2) // 光の滲み
+                        .blur(radius: 2)
                 )
                 .frame(width: 60, height: 60)
             
-            // 2. 白いハイライト (Glass Edge)
-            // ガラスの縁に光が当たっている表現
+            // 2. 白いハイライト
             Circle()
                 .stroke(
                     LinearGradient(
@@ -238,17 +235,15 @@ struct LiquidCalibrationTarget: View {
                 .frame(width: 64, height: 64)
             
             // 3. 進行リング (Neon Liquid)
-            // ネオン管のように強く発光させる
             Circle()
                 .trim(from: 0, to: progress)
                 .stroke(color, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .frame(width: 60, height: 60)
-                .shadow(color: color, radius: 10) // 強いグロー
-                .shadow(color: color.opacity(0.5), radius: 20) // 広がる光
+                .shadow(color: color, radius: 10)
+                .shadow(color: color.opacity(0.5), radius: 20)
             
             // 4. 中心点 (Glass Bead)
-            // 平面的な白丸ではなく、球体のようなガラスビーズ
             Circle()
                 .fill(
                     RadialGradient(

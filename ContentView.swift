@@ -3,7 +3,7 @@ import ARKit
 
 struct ContentView: View {
     @StateObject private var gazeManager = GazeManager()
-    @State private var selectedItem: String = "準備完了"
+    @State private var selectedItem: String = "Setup Completed!"
     
     // 状態管理フラグ
     @State private var isSplashing: Bool = true // 起動画面
