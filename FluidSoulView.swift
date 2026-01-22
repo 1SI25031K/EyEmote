@@ -4,7 +4,6 @@
 //
 //  Created by Kosei Miyamoto on 2026/01/21.
 //
-
 import SwiftUI
 
 // 体験のフェーズ定義
