@@ -10,7 +10,9 @@ struct ContentView: View {
     enum AppState {
         case splash
         case calibration
-        case fluidSoul // ★追加: 感情表現パート
+        case decisionMethod
+        case feelingColorPicker
+        case fluidSoul
         case mainApp
     }
     
@@ -90,7 +92,7 @@ struct ContentView: View {
             
             // 3. Fluid Soul Experience (Artistic)
             if appState == .fluidSoul {
-                FluidSoulView(gazeManager: gazeManager) {
+                FluidSoulExperienceView(gazeManager: gazeManager) {
                     withAnimation { appState = .mainApp }
                 }
                 .transition(.opacity)
@@ -100,11 +102,28 @@ struct ContentView: View {
             // 2. Calibration
             if appState == .calibration {
                 CalibrationView(gazeManager: gazeManager) {
-                    // キャリブレーション完了後、Fluid Soulへ
-                    withAnimation { appState = .fluidSoul }
+                    withAnimation { appState = .decisionMethod }
                 }
                 .transition(.opacity)
                 .zIndex(100)
+            }
+            
+            // 2.5 Decision Method Selection
+            if appState == .decisionMethod {
+                DecisionMethodSelectionView(gazeManager: gazeManager) {
+                    withAnimation { appState = .feelingColorPicker }
+                }
+                .transition(.opacity)
+                .zIndex(120)
+            }
+            
+            // 2.6 Feeling Color Picker
+            if appState == .feelingColorPicker {
+                FeelingColorPickerView(gazeManager: gazeManager) {
+                    withAnimation { appState = .fluidSoul }
+                }
+                .transition(.opacity)
+                .zIndex(125)
             }
             
             // 1. Splash

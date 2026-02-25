@@ -34,13 +34,13 @@ struct CalibrationView: View {
     
     var body: some View {
         ZStack {
+            // 背景: 完全な黒
             Color.black.ignoresSafeArea()
             
-            // ★ Liquid Glass Instruction Text (英語)
+            // ガイダンス字幕
             if showInstructionText {
                 VStack {
                     Spacer()
-                    // ★英語テキストに戻しました
                     Text("The viewpoint setup will begin shortly.\nWhen the ring appears, follow its position with your eyes.")
                         .font(.body)
                         .fontWeight(.medium)
@@ -73,6 +73,10 @@ struct CalibrationView: View {
             }
         }
         .onAppear {
+            // ★重要修正: ここで確実にカメラセッションを開始する
+            gazeManager.startSession()
+            
+            // シーケンス開始
             startSequenceWithVoice()
         }
     }
@@ -80,7 +84,6 @@ struct CalibrationView: View {
     private func startSequenceWithVoice() {
         withAnimation(.easeOut(duration: 0.5)) { showInstructionText = true }
         
-        // ★英語での読み上げ設定 (en-US)
         let text = "The viewpoint setup will begin shortly. When the ring appears, follow its position with your eyes."
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
@@ -109,14 +112,15 @@ struct CalibrationView: View {
             }
             .position(x: UIScreen.main.bounds.width * 0.5, y: UIScreen.main.bounds.height * 0.5)
             
-            // ★英語メッセージ
             Text("Setup Complete")
                 .font(.title).bold().foregroundColor(.white)
                 .padding(.top, 100)
                 .shadow(color: .white.opacity(0.5), radius: 10)
         }
         .onAppear {
-            AudioServicesPlaySystemSound(1022) // Chime
+            // ★追加: 完了音 (Chime) - ID 1022
+            AudioServicesPlaySystemSound(1022)
+            
             withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) { progress = 1.0 }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { onComplete() }
         }
@@ -157,7 +161,9 @@ struct CalibrationView: View {
         progress = 0.0
         withAnimation(.linear(duration: recordingDuration)) { progress = 1.0 }
         DispatchQueue.main.asyncAfter(deadline: .now() + recordingDuration) {
-            AudioServicesPlaySystemSound(1057) // Tock (Loud)
+            // ★追加: リング完成音 (Tock/Key Click) - ID 1104 ははっきり聞こえるクリック音
+            AudioServicesPlaySystemSound(1104)
+            
             recordData()
             determineNextStep()
         }
@@ -205,7 +211,7 @@ struct CalibrationView: View {
     }
 }
 
-// Liquid Glass Design Target (変更なし)
+// Liquid Glass Design Target
 struct LiquidCalibrationTarget: View {
     var progress: CGFloat
     var color: Color
@@ -243,18 +249,11 @@ struct LiquidCalibrationTarget: View {
                 .shadow(color: color, radius: 10)
                 .shadow(color: color.opacity(0.5), radius: 20)
             
-            // 4. 中心点 (Glass Bead)
+            // 4. 中心点 (Glass Bead) -> ★修正: 白に変更
             Circle()
-                .fill(
-                    RadialGradient(
-                        gradient: Gradient(colors: [.white, .white.opacity(0.8), .gray.opacity(0.3)]),
-                        center: .topLeading,
-                        startRadius: 1,
-                        endRadius: 10
-                    )
-                )
+                .fill(Color.white) // 完全な白
                 .frame(width: 12, height: 12)
-                .shadow(color: .black.opacity(0.3), radius: 2, x: 1, y: 1)
+                .shadow(color: .white.opacity(0.8), radius: 4) // 発光感を追加
         }
     }
 }
