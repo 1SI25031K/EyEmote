@@ -51,6 +51,9 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     /// Color chosen in EyEPencil selection (or previous feeling picker). Set when user confirms a pencil.
     @Published var decidedColor: Color?
     
+    /// Opacity (alpha) chosen in OpacitySelectionView. Range 0...1. Set when user confirms a tile.
+    @Published var selectedAlpha: Double = 1.0
+    
     // --- Sensitivity Settings ---
     @Published var sensitivityX: CGFloat = 2.0
     @Published var sensitivityY: CGFloat = 2.0

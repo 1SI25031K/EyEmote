@@ -12,6 +12,7 @@ struct ContentView: View {
         case calibration
         case decisionMethod
         case feelingColorPicker
+        case opacitySelection
         case fluidSoul
         case eyeShapeSculpting
         case mainApp
@@ -130,10 +131,19 @@ struct ContentView: View {
             // 2.6 EyEPencil Selection (discrete pencil grid, replaces gradient wheel)
             if appState == .feelingColorPicker {
                 EyEPencilSelectionView(gazeManager: gazeManager) {
-                    withAnimation { appState = .fluidSoul }
+                    withAnimation(.interactiveSpring(response: 0.5, dampingFraction: 0.8)) { appState = .opacitySelection }
                 }
                 .transition(.opacity)
                 .zIndex(125)
+            }
+            
+            // 2.7 Opacity Selection (transparency of decidedColor; cell-division transition)
+            if appState == .opacitySelection {
+                OpacitySelectionView(gazeManager: gazeManager) {
+                    withAnimation { appState = .fluidSoul }
+                }
+                .transition(.opacity)
+                .zIndex(127)
             }
             
             // 1. Splash
