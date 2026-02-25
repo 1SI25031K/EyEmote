@@ -13,6 +13,7 @@ struct ContentView: View {
         case decisionMethod
         case feelingColorPicker
         case fluidSoul
+        case eyeShapeSculpting
         case mainApp
     }
     
@@ -93,10 +94,19 @@ struct ContentView: View {
             // 3. Fluid Soul Experience (Artistic)
             if appState == .fluidSoul {
                 FluidSoulExperienceView(gazeManager: gazeManager) {
-                    withAnimation { appState = .mainApp }
+                    withAnimation { appState = .eyeShapeSculpting }
                 }
                 .transition(.opacity)
                 .zIndex(150)
+            }
+            
+            // 3.5 EyE Shape Sculpting (Organic area-based sculpting)
+            if appState == .eyeShapeSculpting {
+                EyEShapeSculptingView(gazeManager: gazeManager) {
+                    withAnimation { appState = .mainApp }
+                }
+                .transition(.opacity)
+                .zIndex(155)
             }
             
             // 2. Calibration
@@ -117,9 +127,9 @@ struct ContentView: View {
                 .zIndex(120)
             }
             
-            // 2.6 Feeling Color Picker
+            // 2.6 EyEPencil Selection (discrete pencil grid, replaces gradient wheel)
             if appState == .feelingColorPicker {
-                FeelingColorPickerView(gazeManager: gazeManager) {
+                EyEPencilSelectionView(gazeManager: gazeManager) {
                     withAnimation { appState = .fluidSoul }
                 }
                 .transition(.opacity)

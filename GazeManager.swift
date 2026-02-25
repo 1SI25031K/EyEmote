@@ -10,7 +10,7 @@ import ARKit
 import Combine
 import simd
 
-/// 確認（決定）方法: 視線で選んだ後にどのジェスチャーで確定するか
+/// How to confirm a selection: which gesture commits the choice made by gaze.
 enum DecisionMethod: String, CaseIterable {
     case deepBlink = "Blink for 3 seconds"
     case mouthOpenTwice = "Open Mouth Twice"
@@ -22,13 +22,13 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     
     // MARK: - Published Properties
     
-    /// 画面上の視線位置 (0.0 - 1.0)
+    /// Cursor position on screen in relative coordinates (0.0 - 1.0).
     @Published var cursorRelativePosition: CGPoint = CGPoint(x: 0.5, y: 0.5)
     
-    /// 顔認識中かどうか
+    /// Whether a face is currently detected.
     @Published var isFaceDetected: Bool = false
     
-    /// ステータスメッセージ
+    /// Status message for Liquid Glass feedback.
     @Published var statusMessage: String = ""
     
     // --- Fluid Soul Features ---
@@ -37,16 +37,19 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     @Published var isAutoCorrecting: Bool = false
     
     // --- Decision Method Selection ---
-    /// ユーザーが選択した決定方法（未選択時は nil）
+    /// User-selected decision method (nil when not yet chosen).
     @Published var selectedDecisionMethod: DecisionMethod?
-    /// 決定方法選択画面にいる間 true。この間は Deep Blink でキャリブレーションリセットせず、選択として扱う
+    /// True while on decision-method selection screen; Deep Blink is treated as selection, not calibration reset.
     @Published var isInDecisionSelectionPhase: Bool = false
-    /// Deep Blink（3秒閉眼）が直前に発生したことを通知。ビューで消費したら false に戻す
+    /// Set when a Deep Blink (3 s eyes closed) just occurred; views consume and reset to false.
     @Published var didPerformDeepBlink: Bool = false
-    /// 口を2回開けたジェスチャーが直前に発生したことを通知。ビューで消費したら false に戻す
+    /// Set when mouth-open-twice gesture just occurred; views consume and reset to false.
     @Published var didPerformMouthOpenTwice: Bool = false
-    /// 口を開けた回数（0, 1, 2）。5秒以内に2回開けないとリセット。UIのカウンター表示用
+    /// Mouth-open count (0, 1, 2); resets if second open is not within 5 s. Used for UI counter.
     @Published var mouthOpenCount: Int = 0
+    
+    /// Color chosen in EyEPencil selection (or previous feeling picker). Set when user confirms a pencil.
+    @Published var decidedColor: Color?
     
     // --- Sensitivity Settings ---
     @Published var sensitivityX: CGFloat = 2.0
@@ -54,6 +57,12 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     @Published var xOffset: CGFloat = 0.0
     @Published var yOffset: CGFloat = 0.0
     @Published var smoothing: CGFloat = 0.1
+    
+    /// When true (e.g. during EyE Shape Sculpting), heavier smoothing is applied for a stable, less jittery cursor.
+    @Published var isSculptingMode: Bool = false
+    
+    /// Smoothing factor used in Sculpting mode (lower = heavier, more stable cursor).
+    private let sculptingSmoothing: CGFloat = 0.045
     
     // MARK: - Internal Logic Properties
     
@@ -64,18 +73,20 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     private var accumulatedSensX: [CGFloat] = []
     private var accumulatedSensY: [CGFloat] = []
     
-    // --- 1. Deep Blink (閉眼リセット) ---
+    // --- 1. Deep Blink (eyes-closed reset) ---
     private var eyesClosedStartTime: Date? = nil
     private let blinkThreshold: Float = 0.9
-    // ★修正: 3秒に変更
     private let deepBlinkDuration: TimeInterval = 3.0
     
-    // --- 2. Head Stability (姿勢自動補正) ---
+    // --- 2. Head Stability (posture auto-correction) ---
     private var lastCalibratedHeadPosition: SIMD3<Float>? = nil
     private var lastHeadPosition: SIMD3<Float>? = nil
     private var lastMovementTime: Date = Date()
-    private let movementThreshold: Float = 0.05 // 5cm以上のズレで検知開始
-    // ★修正: 3秒静止で発動
+    /// Head must move beyond this distance (meters) from calibrated position to start waiting for stability.
+    private let movementThreshold: Float = 0.05  // 5 cm
+    /// Frame-to-frame movement above this (meters) resets the stability timer during the waiting period.
+    private let movementResetThreshold: Float = 0.005  // 5 mm
+    /// Uninterrupted stability duration (seconds) required before triggering auto-correction.
     private let stabilityDuration: TimeInterval = 3.0
     private var isWaitingForStability: Bool = false
     
@@ -83,7 +94,7 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     private var lastDwellCheckPosition: CGPoint = .zero
     private let dwellDistanceThreshold: CGFloat = 0.05
     
-    // --- 4. Mouth Open (2回開けて決定) ---
+    // --- 4. Mouth Open (open twice to confirm) ---
     private let jawOpenThreshold: Float = 0.25
     private var wasMouthOpen: Bool = false
     private var lastMouthOpenCountIncrementTime: Date = Date()
@@ -128,6 +139,9 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     
     // MARK: - 1. Gaze & Dwell Logic (Freeze when eyes closed)
     
+    /// Heavier smoothing in Sculpting mode for a stable cursor and less jitter during shape sculpting.
+    private var effectiveSmoothing: CGFloat { isSculptingMode ? sculptingSmoothing : smoothing }
+    
     private func updateGaze(faceAnchor: ARFaceAnchor) {
         let leftBlink = faceAnchor.blendShapes[.eyeBlinkLeft]?.floatValue ?? 0.0
         let rightBlink = faceAnchor.blendShapes[.eyeBlinkRight]?.floatValue ?? 0.0
@@ -147,8 +161,9 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         
         let currentX = cursorRelativePosition.x
         let currentY = cursorRelativePosition.y
-        let smoothedX = currentX + (targetX - currentX) * smoothing
-        let smoothedY = currentY + (targetY - currentY) * smoothing
+        let smooth = effectiveSmoothing
+        let smoothedX = currentX + (targetX - currentX) * smooth
+        let smoothedY = currentY + (targetY - currentY) * smooth
         
         let newPos = CGPoint(x: smoothedX, y: smoothedY)
         self.cursorRelativePosition = newPos
@@ -165,8 +180,11 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         }
     }
     
-    // MARK: - 2. Head Stability Logic (姿勢自動補正)
+    // MARK: - 2. Head Stability Logic (posture auto-correction)
     
+    /// When head moves beyond `movementThreshold` (5 cm) from the calibrated position and then
+    /// remains stable (frame-to-frame movement < 5 mm) for a full `stabilityDuration` (3 s),
+    /// triggers a soft auto-correction so the app adapts to the new posture (closing the inclusion gap).
     private func checkHeadStability(faceAnchor: ARFaceAnchor) {
         let currentPosition = SIMD3<Float>(
             faceAnchor.transform.columns.3.x,
@@ -174,7 +192,6 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
             faceAnchor.transform.columns.3.z
         )
         
-        // 初回位置記憶
         if lastCalibratedHeadPosition == nil {
             lastCalibratedHeadPosition = currentPosition
             lastHeadPosition = currentPosition
@@ -184,29 +201,24 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         guard let calibratedPos = lastCalibratedHeadPosition else { return }
         let distFromCalibrated = simd_distance(currentPosition, calibratedPos)
         
-        // 基準点から大きく(5cm以上)ズレているか？
         if distFromCalibrated > movementThreshold {
             isWaitingForStability = true
             
-            // 直前のフレームからも動いているか？（現在進行形で動いているか）
             if let lastFramePos = lastHeadPosition {
                 let distFromLastFrame = simd_distance(currentPosition, lastFramePos)
-                // 5mm以上動いていれば「まだ動いている」とみなしてタイマーリセット
-                if distFromLastFrame > 0.005 {
+                if distFromLastFrame > movementResetThreshold {
                     lastMovementTime = Date()
                 }
+            } else {
+                lastMovementTime = Date()
             }
         } else {
-            // 元の位置に戻った、あるいはズレていない
             isWaitingForStability = false
             lastMovementTime = Date()
         }
         
-        // 静止時間の判定
         if isWaitingForStability {
             let timeSinceMove = Date().timeIntervalSince(lastMovementTime)
-            
-            // 3秒間静止したら補正実行
             if timeSinceMove >= stabilityDuration {
                 performAutoCorrection(newHeadPosition: currentPosition)
                 isWaitingForStability = false
@@ -217,6 +229,8 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         lastHeadPosition = currentPosition
     }
     
+    /// Updates the calibrated head reference to the current position (soft correction).
+    /// Does not change gaze offset, so cursor mapping remains safe.
     private func performAutoCorrection(newHeadPosition: SIMD3<Float>) {
         if isAutoCorrecting { return }
         isAutoCorrecting = true
@@ -224,9 +238,6 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.warning)
         
-        // ※ここでは視線の中心リセット(calibrateCenter)は行わず、
-        // 「頭の基準位置」だけを更新する（ソフト補正）
-        // ユーザーがどこを見ているか不明なため、視線オフセットまでいじると危険なため。
         lastCalibratedHeadPosition = newHeadPosition
         
         self.statusMessage = "Adjusted for posture change"
@@ -239,7 +250,7 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         }
     }
     
-    // MARK: - 3. Deep Blink Logic (3秒閉眼リセット)
+    // MARK: - 3. Deep Blink Logic (3 s eyes-closed reset)
     
     private func detectDeepBlink(faceAnchor: ARFaceAnchor) {
         let leftBlink = faceAnchor.blendShapes[.eyeBlinkLeft]?.floatValue ?? 0.0
@@ -293,7 +304,6 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         if isAutoCorrecting { return }
         isAutoCorrecting = true
         
-        // 中心リセット実行
         calibrateCenter()
         
         let generator = UINotificationFeedbackGenerator()
@@ -320,7 +330,6 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         self.xOffset = -(rawLookAtPoint.x * sensitivityX)
         self.yOffset = (rawLookAtPoint.y * sensitivityY)
         
-        // 頭の位置も更新しておく
         if let currentFrame = arSession.currentFrame,
            let anchor = currentFrame.anchors.first(where: { $0 is ARFaceAnchor }) {
             let transform = anchor.transform.columns.3
@@ -328,19 +337,43 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
         }
     }
     
+    /// Updates sensitivity and offset from one 12-point calibration sample.
+    /// Maps ARKit lookAtPoint (face-relative) to screen space (0–1): target = (raw * sensitivity) + offset + 0.5 (Y negated).
+    /// Uses trimmed mean over accumulated samples to reduce impact of outliers.
     func calibrateSensitivity(lookingAt targetPoint: CGPoint, centerRaw: CGPoint) {
         let screenDeltaX = targetPoint.x - 0.5
         let screenDeltaY = targetPoint.y - 0.5
         let rawDeltaX = rawLookAtPoint.x - centerRaw.x
         let rawDeltaY = rawLookAtPoint.y - centerRaw.y
         
-        if abs(rawDeltaX) > 0.01 { accumulatedSensX.append(abs(screenDeltaX / rawDeltaX)) }
-        if abs(rawDeltaY) > 0.01 { accumulatedSensY.append(abs(screenDeltaY / rawDeltaY)) }
+        let minRawDelta: CGFloat = 0.01
+        if abs(rawDeltaX) > minRawDelta {
+            accumulatedSensX.append(abs(screenDeltaX / rawDeltaX))
+        }
+        if abs(rawDeltaY) > minRawDelta {
+            accumulatedSensY.append(abs(screenDeltaY / rawDeltaY))
+        }
         
-        if !accumulatedSensX.isEmpty { self.sensitivityX = accumulatedSensX.reduce(0, +) / CGFloat(accumulatedSensX.count) }
-        if !accumulatedSensY.isEmpty { self.sensitivityY = accumulatedSensY.reduce(0, +) / CGFloat(accumulatedSensY.count) }
+        if !accumulatedSensX.isEmpty {
+            self.sensitivityX = trimmedMean(accumulatedSensX, trimRatio: 0.25)
+        }
+        if !accumulatedSensY.isEmpty {
+            self.sensitivityY = trimmedMean(accumulatedSensY, trimRatio: 0.25)
+        }
         
         self.xOffset = -(centerRaw.x * sensitivityX)
         self.yOffset = (centerRaw.y * sensitivityY)
+    }
+    
+    /// Trimmed mean: sort, drop top and bottom `trimRatio` fraction, average the middle. Reduces outlier impact.
+    private func trimmedMean(_ values: [CGFloat], trimRatio: CGFloat) -> CGFloat {
+        guard !values.isEmpty else { return 0 }
+        let sorted = values.sorted()
+        let count = sorted.count
+        let drop = Int(CGFloat(count) * trimRatio)
+        let start = min(drop, count - 1)
+        let end = max(count - drop, start + 1)
+        let slice = sorted[start..<end]
+        return slice.reduce(0, +) / CGFloat(slice.count)
     }
 }

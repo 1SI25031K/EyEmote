@@ -156,7 +156,6 @@ struct FeelingColorPickerView: View {
     }
     
     private func soulCrystalView(currentColor: Color, isSelected: Bool, pulsateScale: CGFloat) -> some View {
-        let neon = Color(red: 0.4, green: 1.0, blue: 0.6)
         return Circle()
             .fill(currentColor)
             .frame(width: 72, height: 72)
