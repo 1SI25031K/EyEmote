@@ -14,6 +14,7 @@ struct ContentView: View {
         case feelingColorPicker
         case opacitySelection
         case textureSelection
+        case shapeSelection
         case fluidSoul
         case eyeShapeSculpting
         case mainApp
@@ -150,10 +151,19 @@ struct ContentView: View {
             // 2.8 Texture Selection (material of Soul Shape; same grid layout, morph transition)
             if appState == .textureSelection {
                 TextureSelectionView(gazeManager: gazeManager) {
-                    withAnimation { appState = .fluidSoul }
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { appState = .shapeSelection }
                 }
                 .transition(.opacity)
                 .zIndex(128)
+            }
+            
+            // 2.9 Shape Selection (geometry of Soul Shape; inherits color, opacity, texture)
+            if appState == .shapeSelection {
+                ShapeSelectionView(gazeManager: gazeManager) {
+                    withAnimation { appState = .fluidSoul }
+                }
+                .transition(.opacity)
+                .zIndex(129)
             }
             
             // 1. Splash

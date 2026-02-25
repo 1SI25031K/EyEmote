@@ -27,6 +27,16 @@ enum SoulTexture: String, CaseIterable {
     case deepLiquid = "Deep Liquid"
 }
 
+/// Geometry of the Soul Shape chosen in ShapeSelectionView.
+enum SoulShape: String, CaseIterable {
+    case circle = "Circle"
+    case squircle = "Squircle"
+    case softBlob = "Soft Blob"
+    case capsule = "Capsule"
+    case diamond = "Diamond"
+    case flowerStar = "Flower"
+}
+
 @MainActor
 class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     
@@ -66,6 +76,9 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     
     /// Texture (material) chosen in TextureSelectionView.
     @Published var selectedTexture: SoulTexture = .glossy
+    
+    /// Geometry chosen in ShapeSelectionView.
+    @Published var selectedShape: SoulShape = .circle
     
     // --- Sensitivity Settings ---
     @Published var sensitivityX: CGFloat = 2.0
