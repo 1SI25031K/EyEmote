@@ -3,14 +3,13 @@
 //  EyEmote
 //
 //  Lets the user choose the visual material (texture) of their Soul Shape.
-//  Uses decidedColor and selectedAlpha. Same grid layout as Opacity phase; circles morph to texture variants.
-//  No cursor; "Border Frame" (halo) feedback on hover.
+//  Uses decidedColor and selectedAlpha. 3x4 grid; lift & scale feedback on hover. No cursor.
 //
 
 import SwiftUI
 
-private let textureRows = 2
-private let textureCols = 3
+private let textureRows = 3
+private let textureCols = 4
 private let textureTotal = textureRows * textureCols
 
 private let textureCases: [SoulTexture] = SoulTexture.allCases
@@ -80,7 +79,7 @@ struct TextureSelectionView: View {
                     hoveredIndex = newIndex
                     if newIndex != prev {
                         lastHoveredIndex = newIndex
-                        let gen = UIImpactFeedbackGenerator(style: .light)
+                        let gen = UIImpactFeedbackGenerator(style: .medium)
                         gen.impactOccurred()
                     }
                 }
@@ -114,30 +113,14 @@ struct TextureSelectionView: View {
                         let index = row * textureCols + col
                         let texture = textureCases[index]
                         let isHovered = hoveredIndex == index
-                        ZStack {
-                            TextureTileView(texture: texture, baseColor: baseColor)
-                            if isHovered {
-                                haloFrame(color: baseColor)
-                            }
-                        }
-                        .frame(width: cellW, height: cellH)
-                        .contentShape(Rectangle())
+                        TextureTileView(texture: texture, baseColor: baseColor, isHovered: isHovered)
+                            .frame(width: cellW, height: cellH)
+                            .contentShape(Rectangle())
                     }
                 }
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: hoveredIndex)
-    }
-    
-    private func haloFrame(color: Color) -> some View {
-        Circle()
-            .strokeBorder(
-                color.opacity(0.95),
-                lineWidth: 3
-            )
-            .frame(width: 72, height: 72)
-            .shadow(color: color.opacity(0.9), radius: 8)
-            .shadow(color: color.opacity(0.5), radius: 14)
+        .animation(.interactiveSpring(response: 0.35, dampingFraction: 0.65), value: hoveredIndex)
     }
     
     private func tileIndexAt(point: CGPoint, in size: CGSize) -> Int? {
@@ -184,183 +167,135 @@ struct TextureSelectionView: View {
     }
 }
 
-// MARK: - Texture Tile (one circle per SoulTexture variant)
+// MARK: - Texture Tile (one circle per SoulTexture variant; lift & scale when hovered)
 
 private struct TextureTileView: View {
     let texture: SoulTexture
     let baseColor: Color
+    let isHovered: Bool
     
     var body: some View {
-        switch texture {
-        case .glossy:
-            glossyCircle
-        case .frosted:
-            frostedCircle
-        case .metallic:
-            metallicCircle
-        case .pearlescent:
-            pearlescentCircle
-        case .iridescent:
-            iridescentCircle
-        case .deepLiquid:
-            deepLiquidCircle
+        Group {
+            switch texture {
+            case .glossy: glossyCircle
+            case .frosted: frostedCircle
+            case .metallic: metallicCircle
+            case .pearlescent: pearlescentCircle
+            case .iridescent: iridescentCircle
+            case .chrome: chromeCircle
+            case .holographic: holographicCircle
+            case .neonGlow: neonGlowCircle
+            case .glassyJelly: glassyJellyCircle
+            case .brushedAluminum: brushedAluminumCircle
+            case .deepVelvet: deepVelvetCircle
+            case .crystal: crystalCircle
+            }
         }
+        .frame(width: 56, height: 56)
+        .scaleEffect(isHovered ? 1.2 : 1.0)
+        .offset(y: isHovered ? -15 : 0)
+        .shadow(color: baseColor.opacity(isHovered ? 0.7 : 0.4), radius: isHovered ? 18 : 8)
+        .shadow(color: .black.opacity(isHovered ? 0.35 : 0.15), radius: isHovered ? 12 : 4)
+        .animation(.interactiveSpring(response: 0.35, dampingFraction: 0.65), value: isHovered)
     }
     
     private var glossyCircle: some View {
         ZStack {
-            Circle()
-                .fill(baseColor)
-                .overlay(
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [.white.opacity(0.85), .white.opacity(0.1), .clear],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                )
-                .overlay(
-                    Circle()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [.white.opacity(0.9), .white.opacity(0.2)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 2
-                        )
-                )
-                .shadow(color: baseColor.opacity(0.6), radius: 10)
+            Circle().fill(baseColor)
+                .overlay(Circle().fill(LinearGradient(colors: [.white.opacity(0.85), .white.opacity(0.1), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                .overlay(Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.9), .white.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2))
         }
-        .frame(width: 56, height: 56)
     }
     
     private var frostedCircle: some View {
         ZStack {
-            Circle()
-                .fill(baseColor)
-            Circle()
-                .fill(.ultraThinMaterial)
-                .blendMode(.overlay)
-            Circle()
-                .strokeBorder(.white.opacity(0.4), lineWidth: 1.5)
+            Circle().fill(baseColor)
+            Circle().fill(.ultraThinMaterial).blendMode(.overlay)
+            Circle().strokeBorder(.white.opacity(0.4), lineWidth: 1.5)
         }
-        .frame(width: 56, height: 56)
-        .shadow(color: baseColor.opacity(0.4), radius: 8)
     }
     
     private var metallicCircle: some View {
         ZStack {
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            baseColor,
-                            baseColor.opacity(0.7),
-                            baseColor.opacity(0.5)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [.white.opacity(0.6), .clear, .black.opacity(0.15)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                )
+            Circle().fill(LinearGradient(colors: [baseColor, baseColor.opacity(0.7), baseColor.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .overlay(Circle().fill(LinearGradient(colors: [.white.opacity(0.6), .clear, .black.opacity(0.15)], startPoint: .top, endPoint: .bottom)))
                 .overlay(Circle().strokeBorder(.white.opacity(0.5), lineWidth: 1))
-                .shadow(color: baseColor.opacity(0.5), radius: 8)
         }
-        .frame(width: 56, height: 56)
     }
     
     private var pearlescentCircle: some View {
         ZStack {
-            Circle()
-                .fill(baseColor)
-                .overlay(
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.5),
-                                    Color.pink.opacity(0.15),
-                                    Color.blue.opacity(0.1),
-                                    .clear
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                )
+            Circle().fill(baseColor)
+                .overlay(Circle().fill(LinearGradient(colors: [.white.opacity(0.5), Color.pink.opacity(0.15), Color.blue.opacity(0.1), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)))
                 .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 1.5))
-                .shadow(color: baseColor.opacity(0.5), radius: 8)
         }
-        .frame(width: 56, height: 56)
     }
     
     private var iridescentCircle: some View {
         let hueShift = Color(hue: 0.15, saturation: 0.4, brightness: 1.0)
         return ZStack {
-            Circle()
-                .fill(baseColor)
-                .overlay(
-                    Circle()
-                        .fill(hueShift.opacity(0.35))
-                        .blendMode(.plusLighter)
-                )
-                .overlay(
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [.white.opacity(0.5), .clear],
-                                startPoint: .topLeading,
-                                endPoint: .center
-                            )
-                        )
-                )
+            Circle().fill(baseColor)
+                .overlay(Circle().fill(hueShift.opacity(0.35)).blendMode(.plusLighter))
+                .overlay(Circle().fill(LinearGradient(colors: [.white.opacity(0.5), .clear], startPoint: .topLeading, endPoint: .center)))
                 .overlay(Circle().strokeBorder(.white.opacity(0.4), lineWidth: 1.5))
-                .shadow(color: baseColor.opacity(0.5), radius: 8)
         }
-        .frame(width: 56, height: 56)
     }
     
-    private var deepLiquidCircle: some View {
+    private var chromeCircle: some View {
         ZStack {
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            baseColor,
-                            baseColor.opacity(0.8),
-                            baseColor.opacity(0.4)
-                        ],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: 35
-                    )
-                )
-                .overlay(
-                    Circle()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [.white.opacity(0.3), .black.opacity(0.4)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 2
-                        )
-                )
-                .shadow(color: .black.opacity(0.4), radius: 4)
-                .shadow(color: baseColor.opacity(0.7), radius: 12)
+            Circle().fill(LinearGradient(colors: [.white.opacity(0.9), baseColor.opacity(0.8), baseColor.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .overlay(Circle().fill(LinearGradient(colors: [.white.opacity(0.8), .clear], startPoint: .top, endPoint: .center)))
+                .overlay(Circle().strokeBorder(LinearGradient(colors: [.white, .white.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5))
         }
-        .frame(width: 56, height: 56)
+    }
+    
+    private var holographicCircle: some View {
+        ZStack {
+            Circle().fill(baseColor)
+                .overlay(Circle().fill(LinearGradient(colors: [Color.cyan.opacity(0.4), Color.purple.opacity(0.3), Color.pink.opacity(0.2), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)).blendMode(.plusLighter))
+                .overlay(Circle().fill(LinearGradient(colors: [.white.opacity(0.6), .clear], startPoint: .topLeading, endPoint: .center)))
+                .overlay(Circle().strokeBorder(.white.opacity(0.5), lineWidth: 1.5))
+        }
+    }
+    
+    private var neonGlowCircle: some View {
+        ZStack {
+            Circle().fill(baseColor)
+                .overlay(Circle().strokeBorder(baseColor, lineWidth: 2))
+                .shadow(color: baseColor, radius: 12)
+                .shadow(color: baseColor.opacity(0.8), radius: 6)
+        }
+    }
+    
+    private var glassyJellyCircle: some View {
+        ZStack {
+            Circle().fill(baseColor.opacity(0.9))
+                .overlay(Circle().fill(LinearGradient(colors: [.white.opacity(0.6), .clear], startPoint: .topLeading, endPoint: .center)))
+                .overlay(Circle().strokeBorder(.white.opacity(0.5), lineWidth: 2))
+        }
+        .blur(radius: 0.5)
+    }
+    
+    private var brushedAluminumCircle: some View {
+        ZStack {
+            Circle().fill(LinearGradient(colors: [baseColor.opacity(0.95), baseColor.opacity(0.7)], startPoint: .top, endPoint: .bottom))
+                .overlay(Circle().fill(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 1))
+        }
+    }
+    
+    private var deepVelvetCircle: some View {
+        ZStack {
+            Circle().fill(RadialGradient(colors: [baseColor, baseColor.opacity(0.6)], center: .center, startRadius: 0, endRadius: 35))
+                .overlay(Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.2), .black.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2))
+        }
+    }
+    
+    private var crystalCircle: some View {
+        ZStack {
+            Circle().fill(baseColor)
+                .overlay(Circle().fill(LinearGradient(colors: [.white.opacity(0.9), .white.opacity(0.2), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                .overlay(Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.95), .white.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2))
+        }
     }
 }

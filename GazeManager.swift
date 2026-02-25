@@ -24,17 +24,29 @@ enum SoulTexture: String, CaseIterable {
     case metallic = "Metallic"
     case pearlescent = "Pearlescent"
     case iridescent = "Iridescent"
-    case deepLiquid = "Deep Liquid"
+    case chrome = "Chrome"
+    case holographic = "Holographic"
+    case neonGlow = "Neon Glow"
+    case glassyJelly = "Glassy Jelly"
+    case brushedAluminum = "Brushed Aluminum"
+    case deepVelvet = "Deep Velvet"
+    case crystal = "Crystal"
 }
 
 /// Geometry of the Soul Shape chosen in ShapeSelectionView.
 enum SoulShape: String, CaseIterable {
     case circle = "Circle"
     case squircle = "Squircle"
-    case softBlob = "Soft Blob"
+    case blob = "Blob"
     case capsule = "Capsule"
     case diamond = "Diamond"
-    case flowerStar = "Flower"
+    case hexagon = "Hexagon"
+    case starSoft = "Star"
+    case leaf = "Leaf"
+    case wave = "Wave"
+    case teardrop = "Teardrop"
+    case roundedTriangle = "Rounded Triangle"
+    case smoothCross = "Smooth Cross"
 }
 
 @MainActor
