@@ -17,6 +17,16 @@ enum DecisionMethod: String, CaseIterable {
     case dwell = "Gaze for 3 seconds"
 }
 
+/// Visual material of the Soul Shape chosen in TextureSelectionView.
+enum SoulTexture: String, CaseIterable {
+    case glossy = "Glossy"
+    case frosted = "Frosted"
+    case metallic = "Metallic"
+    case pearlescent = "Pearlescent"
+    case iridescent = "Iridescent"
+    case deepLiquid = "Deep Liquid"
+}
+
 @MainActor
 class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     
@@ -53,6 +63,9 @@ class GazeManager: NSObject, ObservableObject, ARSessionDelegate {
     
     /// Opacity (alpha) chosen in OpacitySelectionView. Range 0...1. Set when user confirms a tile.
     @Published var selectedAlpha: Double = 1.0
+    
+    /// Texture (material) chosen in TextureSelectionView.
+    @Published var selectedTexture: SoulTexture = .glossy
     
     // --- Sensitivity Settings ---
     @Published var sensitivityX: CGFloat = 2.0
