@@ -4,6 +4,7 @@
 //
 //  Discrete pencil grid selection (EyEPencil) replacing the gradient wheel
 //  for better gaze affordance and inclusion. Left: grid; Right: Soul Shape preview.
+//  Gaze is clamped to the left half ("invisible wall"); no visible cursor in this phase.
 //
 
 import SwiftUI
@@ -98,12 +99,14 @@ struct EyEPencilSelectionView: View {
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
-            let cursorPt = CGPoint(
-                x: gazeManager.cursorRelativePosition.x * size.width,
-                y: gazeManager.cursorRelativePosition.y * size.height
-            )
+            let rel = gazeManager.cursorRelativePosition
             let leftWidth = size.width / 2
-            let indexUnderCursor = pencilIndexAt(point: cursorPt, in: size)
+            let clampedXRel = min(rel.x, 0.5)
+            let clampedCursorPt = CGPoint(
+                x: clampedXRel * size.width,
+                y: rel.y * size.height
+            )
+            let indexUnderCursor = pencilIndexAt(point: clampedCursorPt, in: size)
             
             ZStack {
                 Color.black
@@ -111,7 +114,7 @@ struct EyEPencilSelectionView: View {
                 
                 HStack(spacing: 0) {
                     EyEPencilGridView(
-                        cursorPt: cursorPt,
+                        cursorPt: clampedCursorPt,
                         viewSize: size,
                         hoveredIndex: $hoveredIndex
                     )
@@ -131,10 +134,6 @@ struct EyEPencilSelectionView: View {
                         }
                     }
                     .frame(width: leftWidth, height: size.height)
-                }
-                
-                if gazeManager.isFaceDetected, selectedColor == nil {
-                    GazeCursorView(position: cursorPt)
                 }
                 
                 VStack {
@@ -166,17 +165,17 @@ struct EyEPencilSelectionView: View {
                 }
             }
             .onChange(of: gazeManager.didPerformDeepBlink) { newValue in
-                if newValue, !hasTriggeredSelection { tryConfirmPencil(size: size, cursorPt: cursorPt) }
+                if newValue, !hasTriggeredSelection { tryConfirmPencil(size: size, cursorPt: clampedCursorPt) }
             }
             .onChange(of: gazeManager.didPerformMouthOpenTwice) { newValue in
-                if newValue, !hasTriggeredSelection { tryConfirmPencil(size: size, cursorPt: cursorPt) }
+                if newValue, !hasTriggeredSelection { tryConfirmPencil(size: size, cursorPt: clampedCursorPt) }
             }
             .onChange(of: gazeManager.dwellTime) { _ in
                 if gazeManager.selectedDecisionMethod == .dwell,
                    indexUnderCursor != nil,
                    gazeManager.dwellTime >= dwellThreshold,
                    !hasTriggeredSelection {
-                    tryConfirmPencil(size: size, cursorPt: cursorPt)
+                    tryConfirmPencil(size: size, cursorPt: clampedCursorPt)
                 }
             }
         }
@@ -335,8 +334,9 @@ private struct EyEPencilCell: View {
         }
         .padding(6)
         .scaleEffect(isHovered ? 1.08 : 1.0)
+        .offset(y: isHovered ? -10 : 0)
         .shadow(color: isHovered ? color.opacity(0.6) : .clear, radius: 8)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.6), value: isHovered)
     }
 }
 
